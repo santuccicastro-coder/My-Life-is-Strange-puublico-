@@ -1,0 +1,802 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global safety net: deny everything by default
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // =========================================================================
+    // GLOBAL PRIMITIVES
+    // =========================================================================
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAuthenticatedUser() {
+      return isSignedIn()
+        && (!('firebase' in request.auth.token)
+            || !('sign_in_provider' in request.auth.token.firebase)
+            || request.auth.token.firebase.sign_in_provider != 'anonymous');
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidDateStr(d) {
+      return d is string && d.size() == 10 && d.matches('^\\d{4}-\\d{2}-\\d{2}$');
+    }
+
+    function isValidOptionalDateStr(d) {
+      return d is string && (d == '' || (d.size() == 10 && d.matches('^\\d{4}-\\d{2}-\\d{2}$')));
+    }
+
+    function isValidMonthKey(m) {
+      return m is string && m.size() == 7 && m.matches('^\\d{4}-\\d{2}$');
+    }
+
+    function isValidOptionalMonthKey(m) {
+      return m is string && (m == '' || (m.size() == 7 && m.matches('^\\d{4}-\\d{2}$')));
+    }
+
+    function isHouseholdMember(householdId) {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/households/$(householdId))
+        && request.auth.uid in get(/databases/$(database)/documents/households/$(householdId)).data.memberUids;
+    }
+
+    // =========================================================================
+    // ENTITY VALIDATION BLUEPRINTS
+    // =========================================================================
+    function isValidUserProfile(data) {
+      return data.keys().hasAll(['uid', 'email', 'displayName', 'photoURL', 'activeHouseholdId', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'email', 'displayName', 'photoURL', 'activeHouseholdId', 'createdAt', 'updatedAt'])
+        && isValidId(data.uid)
+        && data.email is string && data.email.size() >= 3 && data.email.size() <= 160
+        && data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 80
+        && data.photoURL is string && data.photoURL.size() <= 500
+        && data.activeHouseholdId is string && data.activeHouseholdId.size() <= 128
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidHousehold(data) {
+      return data.keys().hasAll([
+          'name', 'ownerUid', 'memberUids', 'partner1Uid', 'partner2Uid',
+          'partner1Name', 'partner2Name', 'periodStart',
+          'categories', 'paymentMethods', 'rooms', 'accounts',
+          'lastInviteCode', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'name', 'ownerUid', 'memberUids', 'memberNames', 'partner1Uid', 'partner2Uid',
+          'partner1Name', 'partner2Name', 'periodStart',
+          'categories', 'paymentMethods', 'rooms', 'accounts',
+          'lastInviteCode', 'createdAt', 'updatedAt'
+        ])
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 80
+        && isValidId(data.ownerUid)
+        && data.memberUids is list && data.memberUids.size() >= 1 && data.memberUids.size() <= 7
+        && isValidId(data.memberUids[0])
+        && (data.memberUids.size() < 2 || isValidId(data.memberUids[1]))
+        && (data.memberUids.size() < 3 || isValidId(data.memberUids[2]))
+        && (data.memberUids.size() < 4 || isValidId(data.memberUids[3]))
+        && (data.memberUids.size() < 5 || isValidId(data.memberUids[4]))
+        && (data.memberUids.size() < 6 || isValidId(data.memberUids[5]))
+        && (data.memberUids.size() < 7 || isValidId(data.memberUids[6]))
+        && (!('memberNames' in data) || (data.memberNames is map && data.memberNames.size() <= 7))
+        && isValidId(data.partner1Uid)
+        && data.partner2Uid is string && data.partner2Uid.size() <= 128
+        && data.partner1Name is string && data.partner1Name.size() >= 1 && data.partner1Name.size() <= 50
+        && data.partner2Name is string && data.partner2Name.size() >= 1 && data.partner2Name.size() <= 50
+        && data.periodStart is string && data.periodStart.size() == 10 && data.periodStart.matches('^\\d{4}-\\d{2}-01$')
+        && data.categories is list && data.categories.size() >= 1 && data.categories.size() <= 30 && data.categories[0] is string && data.categories[0].size() <= 60
+        && data.paymentMethods is list && data.paymentMethods.size() >= 1 && data.paymentMethods.size() <= 20 && data.paymentMethods[0] is string && data.paymentMethods[0].size() <= 40
+        && data.rooms is list && data.rooms.size() >= 1 && data.rooms.size() <= 25 && data.rooms[0] is string && data.rooms[0].size() <= 50
+        && data.accounts is list && data.accounts.size() >= 1 && data.accounts.size() <= 25 && data.accounts[0] is string && data.accounts[0].size() <= 60
+        && data.lastInviteCode is string && data.lastInviteCode.size() <= 64
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidInvite(data) {
+      return data.keys().hasAll(['householdId', 'householdName', 'createdByUid', 'createdByName', 'used', 'usedByUid', 'createdAt'])
+        && data.keys().hasOnly(['householdId', 'householdName', 'createdByUid', 'createdByName', 'used', 'usedByUid', 'createdAt', 'usedAt'])
+        && isValidId(data.householdId)
+        && data.householdName is string && data.householdName.size() >= 1 && data.householdName.size() <= 80
+        && isValidId(data.createdByUid)
+        && data.createdByName is string && data.createdByName.size() >= 1 && data.createdByName.size() <= 80
+        && data.used is bool
+        && data.usedByUid is string && data.usedByUid.size() <= 128
+        && data.createdAt is timestamp
+        && (!('usedAt' in data) || data.usedAt is timestamp);
+    }
+
+    function isValidAuditFields(data) {
+      return isValidId(data.createdByUid)
+        && data.createdByName is string && data.createdByName.size() >= 1 && data.createdByName.size() <= 80
+        && isValidId(data.updatedByUid)
+        && data.updatedByName is string && data.updatedByName.size() >= 1 && data.updatedByName.size() <= 80
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidTransaction(data) {
+      return data.keys().hasAll([
+          'type', 'description', 'plannedAmount', 'actualAmount', 'category', 'person',
+          'date', 'monthKey', 'paymentMethod', 'accountOrCard', 'cardId', 'status',
+          'dueDate', 'notes', 'createdByUid', 'createdByName', 'updatedByUid', 'updatedByName',
+          'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'type', 'description', 'plannedAmount', 'actualAmount', 'category', 'person',
+          'date', 'monthKey', 'paymentMethod', 'accountOrCard', 'cardId', 'status',
+          'dueDate', 'notes', 'recurringId', 'recurringMonthKey',
+          'createdByUid', 'createdByName', 'updatedByUid', 'updatedByName',
+          'createdAt', 'updatedAt'
+        ])
+        && data.type in ['Entrada', 'Saída', 'Economia', 'Transferência']
+        && data.description is string && data.description.size() >= 1 && data.description.size() <= 120
+        && data.plannedAmount is number && data.plannedAmount >= 0 && data.plannedAmount <= 100000000
+        && data.actualAmount is number && data.actualAmount >= 0 && data.actualAmount <= 100000000
+        && data.category is string && data.category.size() >= 1 && data.category.size() <= 60
+        && data.person is string && data.person.size() >= 1 && data.person.size() <= 50
+        && isValidDateStr(data.date)
+        && isValidMonthKey(data.monthKey)
+        && data.paymentMethod is string && data.paymentMethod.size() >= 1 && data.paymentMethod.size() <= 40
+        && data.accountOrCard is string && data.accountOrCard.size() >= 1 && data.accountOrCard.size() <= 60
+        && data.cardId is string && data.cardId.size() <= 128
+        && data.status in ['Pago', 'Pendente']
+        && isValidOptionalDateStr(data.dueDate)
+        && data.notes is string && data.notes.size() <= 300
+        && (!('recurringId' in data) || (data.recurringId is string && data.recurringId.size() <= 128))
+        && (!('recurringMonthKey' in data) || isValidOptionalMonthKey(data.recurringMonthKey))
+        && isValidAuditFields(data);
+    }
+
+    function isValidRecurringItem(data) {
+      return data.keys().hasAll([
+          'type', 'description', 'amount', 'category', 'person',
+          'frequency', 'dayOfMonth', 'startMonthKey', 'endMonthKey',
+          'paymentMethod', 'accountOrCard', 'cardId', 'active', 'notes',
+          'createdByUid', 'createdByName', 'updatedByUid', 'updatedByName',
+          'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'type', 'description', 'amount', 'category', 'person',
+          'frequency', 'dayOfMonth', 'startMonthKey', 'endMonthKey',
+          'paymentMethod', 'accountOrCard', 'cardId', 'active', 'notes',
+          'createdByUid', 'createdByName', 'updatedByUid', 'updatedByName',
+          'createdAt', 'updatedAt'
+        ])
+        && data.type in ['Entrada', 'Saída']
+        && data.description is string && data.description.size() >= 1 && data.description.size() <= 120
+        && data.amount is number && data.amount > 0 && data.amount <= 100000000
+        && data.category is string && data.category.size() >= 1 && data.category.size() <= 60
+        && data.person is string && data.person.size() >= 1 && data.person.size() <= 50
+        && data.frequency in ['Mensal', 'Quinzenal', 'Semanal', 'Anual']
+        && data.dayOfMonth is int && data.dayOfMonth >= 1 && data.dayOfMonth <= 31
+        && isValidMonthKey(data.startMonthKey)
+        && isValidOptionalMonthKey(data.endMonthKey)
+        && data.paymentMethod is string && data.paymentMethod.size() >= 1 && data.paymentMethod.size() <= 40
+        && data.accountOrCard is string && data.accountOrCard.size() >= 1 && data.accountOrCard.size() <= 60
+        && data.cardId is string && data.cardId.size() <= 128
+        && data.active is bool
+        && data.notes is string && data.notes.size() <= 300
+        && isValidAuditFields(data);
+    }
+
+    function isValidIncome(data) {
+      return data.keys().hasAll([
+          'person', 'source', 'amount', 'frequency', 'receiptDay', 'receiptDate',
+          'active', 'notes', 'createdByUid', 'createdByName', 'updatedByUid', 'updatedByName',
+          'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'person', 'source', 'amount', 'frequency', 'receiptDay', 'receiptDate',
+          'active', 'notes', 'createdByUid', 'createdByName', 'updatedByUid', 'updatedByName',
+          'createdAt', 'updatedAt'
+        ])
+        && data.person is string && data.person.size() >= 1 && data.person.size() <= 50
+        && data.source is string && data.source.size() >= 1 && data.source.size() <= 100
+        && data.amount is number && data.amount > 0 && data.amount <= 100000000
+        && data.frequency in ['Mensal', 'Quinzenal', 'Semanal', 'Única', 'Anual']
+        && data.receiptDay is int && data.receiptDay >= 1 && data.receiptDay <= 31
+        && isValidOptionalDateStr(data.receiptDate)
+        && data.active is bool
+        && data.notes is string && data.notes.size() <= 300
+        && isValidAuditFields(data);
+    }
+
+    function isValidCard(data) {
+      return data.keys().hasAll([
+          'name', 'holder', 'limit', 'closingDay', 'dueDay', 'color', 'active',
+          'createdByUid', 'createdByName', 'updatedByUid', 'updatedByName', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'name', 'holder', 'limit', 'closingDay', 'dueDay', 'color', 'active',
+          'createdByUid', 'createdByName', 'updatedByUid', 'updatedByName', 'createdAt', 'updatedAt'
+        ])
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 60
+        && data.holder is string && data.holder.size() >= 1 && data.holder.size() <= 50
+        && data.limit is number && data.limit >= 0 && data.limit <= 100000000
+        && data.closingDay is int && data.closingDay >= 1 && data.closingDay <= 31
+        && data.dueDay is int && data.dueDay >= 1 && data.dueDay <= 31
+        && data.color is string && data.color.size() >= 4 && data.color.size() <= 20
+        && data.active is bool
+        && isValidAuditFields(data);
+    }
+
+    function isValidInstallment(data) {
+      return data.keys().hasAll([
+          'description', 'cardId', 'cardName', 'person', 'category', 'totalAmount',
+          'installmentsCount', 'firstChargeDate', 'notes',
+          'createdByUid', 'createdByName', 'updatedByUid', 'updatedByName', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'description', 'cardId', 'cardName', 'person', 'category', 'totalAmount',
+          'installmentsCount', 'firstChargeDate', 'notes',
+          'createdByUid', 'createdByName', 'updatedByUid', 'updatedByName', 'createdAt', 'updatedAt'
+        ])
+        && data.description is string && data.description.size() >= 1 && data.description.size() <= 120
+        && data.cardId is string && data.cardId.size() <= 128
+        && data.cardName is string && data.cardName.size() >= 1 && data.cardName.size() <= 60
+        && data.person is string && data.person.size() >= 1 && data.person.size() <= 50
+        && data.category is string && data.category.size() >= 1 && data.category.size() <= 60
+        && data.totalAmount is number && data.totalAmount > 0 && data.totalAmount <= 100000000
+        && data.installmentsCount is int && data.installmentsCount >= 1 && data.installmentsCount <= 120
+        && isValidDateStr(data.firstChargeDate)
+        && data.notes is string && data.notes.size() <= 300
+        && isValidAuditFields(data);
+    }
+
+    function isValidGoal(data) {
+      return data.keys().hasAll([
+          'name', 'targetAmount', 'currentAmount', 'monthlyContribution', 'annualYieldRate', 'notes',
+          'createdByUid', 'createdByName', 'updatedByUid', 'updatedByName', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'name', 'targetAmount', 'currentAmount', 'monthlyContribution', 'annualYieldRate', 'notes',
+          'createdByUid', 'createdByName', 'updatedByUid', 'updatedByName', 'createdAt', 'updatedAt'
+        ])
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 80
+        && data.targetAmount is number && data.targetAmount > 0 && data.targetAmount <= 100000000
+        && data.currentAmount is number && data.currentAmount >= 0 && data.currentAmount <= 100000000
+        && data.monthlyContribution is number && data.monthlyContribution >= 0 && data.monthlyContribution <= 100000000
+        && data.annualYieldRate is number && data.annualYieldRate >= 0 && data.annualYieldRate <= 5
+        && data.notes is string && data.notes.size() <= 300
+        && isValidAuditFields(data);
+    }
+
+    function isValidGoalMovement(data) {
+      return data.keys().hasAll([
+          'goalId', 'goalName', 'type', 'amount', 'date', 'person', 'notes',
+          'createdByUid', 'createdByName', 'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'goalId', 'goalName', 'type', 'amount', 'date', 'person', 'notes',
+          'createdByUid', 'createdByName', 'createdAt'
+        ])
+        && isValidId(data.goalId)
+        && data.goalName is string && data.goalName.size() >= 1 && data.goalName.size() <= 80
+        && data.type in ['Depósito', 'Retirada']
+        && data.amount is number && data.amount > 0 && data.amount <= 100000000
+        && isValidDateStr(data.date)
+        && data.person is string && data.person.size() >= 1 && data.person.size() <= 50
+        && data.notes is string && data.notes.size() <= 300
+        && isValidId(data.createdByUid)
+        && data.createdByName is string && data.createdByName.size() >= 1 && data.createdByName.size() <= 80
+        && data.createdAt is timestamp;
+    }
+
+    function isValidPlannedPurchase(data) {
+      return data.keys().hasAll([
+          'priority', 'room', 'product', 'brandModel', 'specs', 'quantity',
+          'estimatedUnitPrice', 'actualUnitPrice', 'hasActualPrice', 'targetDate',
+          'purchaseDate', 'paymentMethod', 'status', 'notes',
+          'createdByUid', 'createdByName', 'updatedByUid', 'updatedByName', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'priority', 'room', 'product', 'brandModel', 'specs', 'quantity',
+          'estimatedUnitPrice', 'actualUnitPrice', 'hasActualPrice', 'targetDate',
+          'purchaseDate', 'paymentMethod', 'status', 'notes',
+          'createdByUid', 'createdByName', 'updatedByUid', 'updatedByName', 'createdAt', 'updatedAt'
+        ])
+        && data.priority is int && data.priority >= 0 && data.priority <= 10
+        && data.room is string && data.room.size() >= 1 && data.room.size() <= 50
+        && data.product is string && data.product.size() >= 1 && data.product.size() <= 100
+        && data.brandModel is string && data.brandModel.size() <= 100
+        && data.specs is string && data.specs.size() <= 200
+        && data.quantity is int && data.quantity >= 1 && data.quantity <= 1000
+        && data.estimatedUnitPrice is number && data.estimatedUnitPrice >= 0 && data.estimatedUnitPrice <= 100000000
+        && data.actualUnitPrice is number && data.actualUnitPrice >= 0 && data.actualUnitPrice <= 100000000
+        && data.hasActualPrice is bool
+        && isValidOptionalDateStr(data.targetDate)
+        && isValidOptionalDateStr(data.purchaseDate)
+        && data.paymentMethod is string && data.paymentMethod.size() <= 40
+        && data.status in ['Pendente', 'Pesquisando', 'Comprado', 'Cancelado']
+        && data.notes is string && data.notes.size() <= 300
+        && isValidAuditFields(data);
+    }
+
+    function isValidScenario(data) {
+      return data.keys().hasAll([
+          'name', 'expenseChangePct', 'incomeChangePct', 'mode', 'customBaseExpense', 'useCustomBaseExpense',
+          'createdByUid', 'createdByName', 'updatedByUid', 'updatedByName', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'name', 'expenseChangePct', 'incomeChangePct', 'mode', 'customBaseExpense', 'useCustomBaseExpense',
+          'createdByUid', 'createdByName', 'updatedByUid', 'updatedByName', 'createdAt', 'updatedAt'
+        ])
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 80
+        && data.expenseChangePct is number && data.expenseChangePct >= -1 && data.expenseChangePct <= 10
+        && data.incomeChangePct is number && data.incomeChangePct >= -1 && data.incomeChangePct <= 10
+        && data.mode in ['De uma vez', 'Gradual em 12 meses']
+        && data.customBaseExpense is number && data.customBaseExpense >= 0 && data.customBaseExpense <= 100000000
+        && data.useCustomBaseExpense is bool
+        && isValidAuditFields(data);
+    }
+
+    function isValidAiMessage(data) {
+      return data.keys().hasAll([
+          'role', 'text', 'mode', 'modelUsed', 'createdByUid', 'createdByName', 'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'role', 'text', 'mode', 'modelUsed', 'createdByUid', 'createdByName', 'createdAt'
+        ])
+        && data.role in ['user', 'model']
+        && data.text is string && data.text.size() >= 1 && data.text.size() <= 8000
+        && data.mode in ['fast', 'general', 'deep']
+        && data.modelUsed is string && data.modelUsed.size() >= 1 && data.modelUsed.size() <= 64
+        && isValidId(data.createdByUid)
+        && data.createdByName is string && data.createdByName.size() >= 1 && data.createdByName.size() <= 80
+        && data.createdAt is timestamp;
+    }
+
+    function isValidBankAccount(data) {
+      return data.keys().hasAll([
+          'name', 'institution', 'type', 'balance', 'currency',
+          'lastSyncedAt', 'active',
+          'createdByUid', 'createdByName', 'updatedByUid', 'updatedByName', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'name', 'institution', 'type', 'balance', 'annualYieldRate', 'currency',
+          'lastSyncedAt', 'active',
+          'createdByUid', 'createdByName', 'updatedByUid', 'updatedByName', 'createdAt', 'updatedAt'
+        ])
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 80
+        && data.institution is string && data.institution.size() >= 1 && data.institution.size() <= 80
+        && data.type in ['Corrente', 'Poupança', 'Carteira', 'Investimento', 'Outro']
+        && data.balance is number && data.balance >= -100000000 && data.balance <= 100000000
+        && (!('annualYieldRate' in data) || (data.annualYieldRate is number && data.annualYieldRate >= 0 && data.annualYieldRate <= 5))
+        && data.currency is string && data.currency.size() >= 3 && data.currency.size() <= 10
+        && data.lastSyncedAt is string && data.lastSyncedAt.size() <= 40
+        && data.active is bool
+        && isValidAuditFields(data);
+    }
+
+    // =========================================================================
+    // USERS (PII ISOLATED)
+    // =========================================================================
+    match /users/{userId} {
+      allow get: if isOwner(userId) && isValidId(userId);
+      allow list: if false;
+      allow create: if isAuthenticatedUser()
+        && isOwner(userId)
+        && isValidId(userId)
+        && isValidUserProfile(incoming())
+        && incoming().uid == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isAuthenticatedUser()
+        && isOwner(userId)
+        && isValidId(userId)
+        && isValidUserProfile(incoming())
+        && incoming().uid == existing().uid
+        && incoming().email == existing().email
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL', 'activeHouseholdId', 'updatedAt']);
+      allow delete: if false;
+    }
+
+    // =========================================================================
+    // INVITES (SINGLE-USE COUPLE JOINING)
+    // =========================================================================
+    match /invites/{inviteId} {
+      allow get: if isAuthenticatedUser() && isValidId(inviteId);
+      allow list: if isSignedIn() && resource.data.createdByUid == request.auth.uid;
+      allow create: if isAuthenticatedUser()
+        && isValidId(inviteId)
+        && isValidInvite(incoming())
+        && incoming().createdByUid == request.auth.uid
+        && incoming().used == false
+        && incoming().usedByUid == ''
+        && incoming().createdAt == request.time
+        && isHouseholdMember(incoming().householdId);
+      allow update: if isAuthenticatedUser()
+        && isValidId(inviteId)
+        && isValidInvite(incoming())
+        && existing().used == false
+        && incoming().used == true
+        && incoming().usedByUid == request.auth.uid
+        && incoming().householdId == existing().householdId
+        && incoming().householdName == existing().householdName
+        && incoming().createdByUid == existing().createdByUid
+        && incoming().createdByName == existing().createdByName
+        && incoming().createdAt == existing().createdAt
+        && incoming().usedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['used', 'usedByUid', 'usedAt']);
+      allow delete: if isAuthenticatedUser()
+        && isValidId(inviteId)
+        && existing().createdByUid == request.auth.uid;
+    }
+
+    // =========================================================================
+    // HOUSEHOLDS & SHARED SUBCOLLECTIONS
+    // =========================================================================
+    match /households/{householdId} {
+      allow get: if isSignedIn() && isValidId(householdId) && request.auth.uid in existing().memberUids;
+      allow list: if isSignedIn() && request.auth.uid in resource.data.memberUids;
+      allow create: if isAuthenticatedUser()
+        && isValidId(householdId)
+        && isValidHousehold(incoming())
+        && incoming().ownerUid == request.auth.uid
+        && incoming().partner1Uid == request.auth.uid
+        && incoming().partner2Uid == ''
+        && incoming().memberUids.size() == 1
+        && incoming().memberUids[0] == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isAuthenticatedUser()
+        && isValidId(householdId)
+        && isValidHousehold(incoming())
+        && incoming().ownerUid == existing().ownerUid
+        && incoming().partner1Uid == existing().partner1Uid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          // Action 1: Member updates workspace configuration, lists & member names
+          (request.auth.uid in existing().memberUids
+            && incoming().memberUids == existing().memberUids
+            && incoming().partner2Uid == existing().partner2Uid
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'name', 'partner1Name', 'partner2Name', 'memberNames', 'periodStart',
+              'categories', 'paymentMethods', 'rooms', 'accounts', 'updatedAt'
+            ]))
+          ||
+          // Action 2: New member (up to 7) joins atomically using a single-use invite
+          (existing().memberUids.size() < 7
+            && !(request.auth.uid in existing().memberUids)
+            && incoming().memberUids.size() == existing().memberUids.size() + 1
+            && incoming().memberUids.hasAll(existing().memberUids)
+            && request.auth.uid in incoming().memberUids
+            && 'memberNames' in incoming()
+            && request.auth.uid in incoming().memberNames
+            && incoming().memberNames[request.auth.uid] is string
+            && incoming().memberNames[request.auth.uid].size() >= 1
+            && incoming().memberNames[request.auth.uid].size() <= 50
+            && (!('memberNames' in existing())
+                ? incoming().memberNames.size() == 1
+                : (incoming().memberNames.keys().hasAll(existing().memberNames.keys())
+                  && incoming().memberNames.diff(existing().memberNames).affectedKeys().hasOnly([request.auth.uid])))
+            && isValidId(incoming().lastInviteCode)
+            && existsAfter(/databases/$(database)/documents/invites/$(incoming().lastInviteCode))
+            && getAfter(/databases/$(database)/documents/invites/$(incoming().lastInviteCode)).data.householdId == householdId
+            && getAfter(/databases/$(database)/documents/invites/$(incoming().lastInviteCode)).data.used == true
+            && getAfter(/databases/$(database)/documents/invites/$(incoming().lastInviteCode)).data.usedByUid == request.auth.uid
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'memberUids', 'memberNames', 'lastInviteCode', 'updatedAt'
+            ]))
+          ||
+          // Action 3: Owner removes a non-owner member from household
+          (existing().ownerUid == request.auth.uid
+            && existing().memberUids.size() > 1
+            && incoming().memberUids.size() == existing().memberUids.size() - 1
+            && existing().memberUids.hasAll(incoming().memberUids)
+            && existing().ownerUid in incoming().memberUids
+            && (incoming().partner2Uid == '' || incoming().partner2Uid in incoming().memberUids)
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'memberUids', 'memberNames', 'partner2Uid', 'updatedAt'
+            ]))
+        );
+      allow delete: if isAuthenticatedUser()
+        && isValidId(householdId)
+        && existing().ownerUid == request.auth.uid
+        && existing().memberUids.size() == 1;
+
+      match /transactions/{transactionId} {
+        allow get: if isSignedIn() && isValidId(householdId) && isValidId(transactionId) && isHouseholdMember(householdId);
+        allow list: if isSignedIn() && isHouseholdMember(householdId);
+        allow create: if isAuthenticatedUser()
+          && isValidId(householdId) && isValidId(transactionId)
+          && isValidTransaction(incoming())
+          && incoming().createdByUid == request.auth.uid
+          && incoming().updatedByUid == request.auth.uid
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time
+          && isHouseholdMember(householdId);
+        allow update: if isAuthenticatedUser()
+          && isValidId(householdId) && isValidId(transactionId)
+          && isValidTransaction(incoming())
+          && incoming().createdByUid == existing().createdByUid
+          && incoming().createdByName == existing().createdByName
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedByUid == request.auth.uid
+          && incoming().updatedAt == request.time
+          && isHouseholdMember(householdId)
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'type', 'description', 'plannedAmount', 'actualAmount', 'category', 'person',
+            'date', 'monthKey', 'paymentMethod', 'accountOrCard', 'cardId', 'status',
+            'dueDate', 'notes', 'recurringId', 'recurringMonthKey',
+            'updatedByUid', 'updatedByName', 'updatedAt'
+          ]);
+        allow delete: if isAuthenticatedUser() && isValidId(householdId) && isValidId(transactionId) && isHouseholdMember(householdId);
+      }
+
+      match /recurringItems/{itemId} {
+        allow get: if isSignedIn() && isValidId(householdId) && isValidId(itemId) && isHouseholdMember(householdId);
+        allow list: if isSignedIn() && isHouseholdMember(householdId);
+        allow create: if isAuthenticatedUser()
+          && isValidId(householdId) && isValidId(itemId)
+          && isValidRecurringItem(incoming())
+          && incoming().createdByUid == request.auth.uid
+          && incoming().updatedByUid == request.auth.uid
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time
+          && isHouseholdMember(householdId);
+        allow update: if isAuthenticatedUser()
+          && isValidId(householdId) && isValidId(itemId)
+          && isValidRecurringItem(incoming())
+          && incoming().createdByUid == existing().createdByUid
+          && incoming().createdByName == existing().createdByName
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedByUid == request.auth.uid
+          && incoming().updatedAt == request.time
+          && isHouseholdMember(householdId)
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'type', 'description', 'amount', 'category', 'person',
+            'frequency', 'dayOfMonth', 'startMonthKey', 'endMonthKey',
+            'paymentMethod', 'accountOrCard', 'cardId', 'active', 'notes',
+            'updatedByUid', 'updatedByName', 'updatedAt'
+          ]);
+        allow delete: if isAuthenticatedUser() && isValidId(householdId) && isValidId(itemId) && isHouseholdMember(householdId);
+      }
+
+      match /incomes/{incomeId} {
+        allow get: if isSignedIn() && isValidId(householdId) && isValidId(incomeId) && isHouseholdMember(householdId);
+        allow list: if isSignedIn() && isHouseholdMember(householdId);
+        allow create: if isAuthenticatedUser()
+          && isValidId(householdId) && isValidId(incomeId)
+          && isValidIncome(incoming())
+          && incoming().createdByUid == request.auth.uid
+          && incoming().updatedByUid == request.auth.uid
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time
+          && isHouseholdMember(householdId);
+        allow update: if isAuthenticatedUser()
+          && isValidId(householdId) && isValidId(incomeId)
+          && isValidIncome(incoming())
+          && incoming().createdByUid == existing().createdByUid
+          && incoming().createdByName == existing().createdByName
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedByUid == request.auth.uid
+          && incoming().updatedAt == request.time
+          && isHouseholdMember(householdId)
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'person', 'source', 'amount', 'frequency', 'receiptDay', 'receiptDate',
+            'active', 'notes', 'updatedByUid', 'updatedByName', 'updatedAt'
+          ]);
+        allow delete: if isAuthenticatedUser() && isValidId(householdId) && isValidId(incomeId) && isHouseholdMember(householdId);
+      }
+
+      match /cards/{cardId} {
+        allow get: if isSignedIn() && isValidId(householdId) && isValidId(cardId) && isHouseholdMember(householdId);
+        allow list: if isSignedIn() && isHouseholdMember(householdId);
+        allow create: if isAuthenticatedUser()
+          && isValidId(householdId) && isValidId(cardId)
+          && isValidCard(incoming())
+          && incoming().createdByUid == request.auth.uid
+          && incoming().updatedByUid == request.auth.uid
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time
+          && isHouseholdMember(householdId);
+        allow update: if isAuthenticatedUser()
+          && isValidId(householdId) && isValidId(cardId)
+          && isValidCard(incoming())
+          && incoming().createdByUid == existing().createdByUid
+          && incoming().createdByName == existing().createdByName
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedByUid == request.auth.uid
+          && incoming().updatedAt == request.time
+          && isHouseholdMember(householdId)
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'name', 'holder', 'limit', 'closingDay', 'dueDay', 'color', 'active',
+            'updatedByUid', 'updatedByName', 'updatedAt'
+          ]);
+        allow delete: if isAuthenticatedUser() && isValidId(householdId) && isValidId(cardId) && isHouseholdMember(householdId);
+      }
+
+      match /installments/{installmentId} {
+        allow get: if isSignedIn() && isValidId(householdId) && isValidId(installmentId) && isHouseholdMember(householdId);
+        allow list: if isSignedIn() && isHouseholdMember(householdId);
+        allow create: if isAuthenticatedUser()
+          && isValidId(householdId) && isValidId(installmentId)
+          && isValidInstallment(incoming())
+          && incoming().createdByUid == request.auth.uid
+          && incoming().updatedByUid == request.auth.uid
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time
+          && isHouseholdMember(householdId);
+        allow update: if isAuthenticatedUser()
+          && isValidId(householdId) && isValidId(installmentId)
+          && isValidInstallment(incoming())
+          && incoming().createdByUid == existing().createdByUid
+          && incoming().createdByName == existing().createdByName
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedByUid == request.auth.uid
+          && incoming().updatedAt == request.time
+          && isHouseholdMember(householdId)
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'description', 'cardId', 'cardName', 'person', 'category', 'totalAmount',
+            'installmentsCount', 'firstChargeDate', 'notes',
+            'updatedByUid', 'updatedByName', 'updatedAt'
+          ]);
+        allow delete: if isAuthenticatedUser() && isValidId(householdId) && isValidId(installmentId) && isHouseholdMember(householdId);
+      }
+
+      match /goals/{goalId} {
+        allow get: if isSignedIn() && isValidId(householdId) && isValidId(goalId) && isHouseholdMember(householdId);
+        allow list: if isSignedIn() && isHouseholdMember(householdId);
+        allow create: if isAuthenticatedUser()
+          && isValidId(householdId) && isValidId(goalId)
+          && isValidGoal(incoming())
+          && incoming().createdByUid == request.auth.uid
+          && incoming().updatedByUid == request.auth.uid
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time
+          && isHouseholdMember(householdId);
+        allow update: if isAuthenticatedUser()
+          && isValidId(householdId) && isValidId(goalId)
+          && isValidGoal(incoming())
+          && incoming().createdByUid == existing().createdByUid
+          && incoming().createdByName == existing().createdByName
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedByUid == request.auth.uid
+          && incoming().updatedAt == request.time
+          && isHouseholdMember(householdId)
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'name', 'targetAmount', 'currentAmount', 'monthlyContribution', 'annualYieldRate', 'notes',
+            'updatedByUid', 'updatedByName', 'updatedAt'
+          ]);
+        allow delete: if isAuthenticatedUser() && isValidId(householdId) && isValidId(goalId) && isHouseholdMember(householdId);
+      }
+
+      match /goalMovements/{movementId} {
+        allow get: if isSignedIn() && isValidId(householdId) && isValidId(movementId) && isHouseholdMember(householdId);
+        allow list: if isSignedIn() && isHouseholdMember(householdId);
+        allow create: if isAuthenticatedUser()
+          && isValidId(householdId) && isValidId(movementId)
+          && isValidGoalMovement(incoming())
+          && incoming().createdByUid == request.auth.uid
+          && incoming().createdAt == request.time
+          && isHouseholdMember(householdId)
+          && existsAfter(/databases/$(database)/documents/households/$(householdId)/goals/$(incoming().goalId))
+          && getAfter(/databases/$(database)/documents/households/$(householdId)/goals/$(incoming().goalId)).data.updatedAt == request.time;
+        allow update: if false;
+        allow delete: if isAuthenticatedUser() && isValidId(householdId) && isValidId(movementId) && isHouseholdMember(householdId);
+      }
+
+      match /plannedPurchases/{purchaseId} {
+        allow get: if isSignedIn() && isValidId(householdId) && isValidId(purchaseId) && isHouseholdMember(householdId);
+        allow list: if isSignedIn() && isHouseholdMember(householdId);
+        allow create: if isAuthenticatedUser()
+          && isValidId(householdId) && isValidId(purchaseId)
+          && isValidPlannedPurchase(incoming())
+          && incoming().createdByUid == request.auth.uid
+          && incoming().updatedByUid == request.auth.uid
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time
+          && isHouseholdMember(householdId);
+        allow update: if isAuthenticatedUser()
+          && isValidId(householdId) && isValidId(purchaseId)
+          && isValidPlannedPurchase(incoming())
+          && incoming().createdByUid == existing().createdByUid
+          && incoming().createdByName == existing().createdByName
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedByUid == request.auth.uid
+          && incoming().updatedAt == request.time
+          && isHouseholdMember(householdId)
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'priority', 'room', 'product', 'brandModel', 'specs', 'quantity',
+            'estimatedUnitPrice', 'actualUnitPrice', 'hasActualPrice', 'targetDate',
+            'purchaseDate', 'paymentMethod', 'status', 'notes',
+            'updatedByUid', 'updatedByName', 'updatedAt'
+          ]);
+        allow delete: if isAuthenticatedUser() && isValidId(householdId) && isValidId(purchaseId) && isHouseholdMember(householdId);
+      }
+
+      match /scenarios/{scenarioId} {
+        allow get: if isSignedIn() && isValidId(householdId) && isValidId(scenarioId) && isHouseholdMember(householdId);
+        allow list: if isSignedIn() && isHouseholdMember(householdId);
+        allow create: if isAuthenticatedUser()
+          && isValidId(householdId) && isValidId(scenarioId)
+          && isValidScenario(incoming())
+          && incoming().createdByUid == request.auth.uid
+          && incoming().updatedByUid == request.auth.uid
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time
+          && isHouseholdMember(householdId);
+        allow update: if isAuthenticatedUser()
+          && isValidId(householdId) && isValidId(scenarioId)
+          && isValidScenario(incoming())
+          && incoming().createdByUid == existing().createdByUid
+          && incoming().createdByName == existing().createdByName
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedByUid == request.auth.uid
+          && incoming().updatedAt == request.time
+          && isHouseholdMember(householdId)
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'name', 'expenseChangePct', 'incomeChangePct', 'mode', 'customBaseExpense', 'useCustomBaseExpense',
+            'updatedByUid', 'updatedByName', 'updatedAt'
+          ]);
+        allow delete: if isAuthenticatedUser() && isValidId(householdId) && isValidId(scenarioId) && isHouseholdMember(householdId);
+      }
+
+      match /aiMessages/{messageId} {
+        allow get: if isSignedIn() && isValidId(householdId) && isValidId(messageId) && isHouseholdMember(householdId);
+        allow list: if isSignedIn() && isHouseholdMember(householdId);
+        allow create: if isAuthenticatedUser()
+          && isValidId(householdId) && isValidId(messageId)
+          && isValidAiMessage(incoming())
+          && incoming().createdByUid == request.auth.uid
+          && incoming().createdAt == request.time
+          && isHouseholdMember(householdId);
+        allow update: if false;
+        allow delete: if isAuthenticatedUser() && isValidId(householdId) && isValidId(messageId) && isHouseholdMember(householdId);
+      }
+
+      match /bankAccounts/{accountId} {
+        allow get: if isSignedIn() && isValidId(householdId) && isValidId(accountId) && isHouseholdMember(householdId);
+        allow list: if isSignedIn() && isHouseholdMember(householdId);
+        allow create: if isAuthenticatedUser()
+          && isValidId(householdId) && isValidId(accountId)
+          && isValidBankAccount(incoming())
+          && incoming().createdByUid == request.auth.uid
+          && incoming().updatedByUid == request.auth.uid
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time
+          && isHouseholdMember(householdId);
+        allow update: if isAuthenticatedUser()
+          && isValidId(householdId) && isValidId(accountId)
+          && isValidBankAccount(incoming())
+          && incoming().createdByUid == existing().createdByUid
+          && incoming().createdByName == existing().createdByName
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedByUid == request.auth.uid
+          && incoming().updatedAt == request.time
+          && isHouseholdMember(householdId)
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'name', 'institution', 'type', 'balance', 'annualYieldRate', 'currency',
+            'lastSyncedAt', 'active',
+            'updatedByUid', 'updatedByName', 'updatedAt'
+          ]);
+        allow delete: if isAuthenticatedUser() && isValidId(householdId) && isValidId(accountId) && isHouseholdMember(householdId);
+      }
+    }
+  }
+}

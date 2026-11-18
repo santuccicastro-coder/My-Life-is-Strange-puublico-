@@ -1,0 +1,333 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-display: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    max-width: 100%;
+    overflow-x: clip;
+    overscroll-behavior-x: none;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    background-color: #F8FAFC;
+    color: #0F172A;
+    touch-action: pan-y;
+    transition: background-color 150ms ease, color 150ms ease;
+  }
+
+  html.dark body {
+    background-color: #020617;
+    color: #F1F5F9;
+  }
+
+  h1, h2, h3, h4 {
+    font-family: var(--font-display);
+  }
+
+  input,
+  select,
+  textarea {
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  button,
+  a {
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+/* Evita zoom automático no Safari iOS ao focar inputs menores que 16px */
+@supports (-webkit-touch-callout: none) {
+  @media (max-width: 767px) {
+    input.text-xs,
+    input.text-sm,
+    select.text-xs,
+    select.text-sm,
+    textarea.text-xs,
+    textarea.text-sm {
+      font-size: 16px;
+    }
+  }
+}
+
+/* Global Dark Mode adaptation for DuoFin surfaces, borders, text, and inputs */
+html.dark :where(.bg-white) {
+  background-color: #0F172A;
+}
+
+html.dark :where(.bg-white\/95) {
+  background-color: rgba(15, 23, 42, 0.95);
+}
+
+html.dark :where(.bg-slate-50) {
+  background-color: #020617;
+}
+
+html.dark :where(.bg-slate-50\/60) {
+  background-color: rgba(15, 23, 42, 0.65);
+}
+
+html.dark :where(.bg-slate-100) {
+  background-color: #1E293B;
+}
+
+html.dark :where(.hover\:bg-slate-50):hover {
+  background-color: #1E293B;
+}
+
+html.dark :where(.hover\:bg-slate-100):hover {
+  background-color: #334155;
+}
+
+html.dark :where(.hover\:bg-slate-200):hover {
+  background-color: #334155;
+}
+
+html.dark :where(.border-slate-200) {
+  border-color: #1E293B;
+}
+
+html.dark :where(.border-slate-100) {
+  border-color: #1E293B;
+}
+
+html.dark :where(.divide-slate-100 > :not(:last-child)) {
+  border-color: #1E293B;
+}
+
+html.dark :where(.text-slate-900) {
+  color: #F8FAFC;
+}
+
+html.dark :where(.text-slate-800) {
+  color: #E2E8F0;
+}
+
+html.dark :where(.text-slate-700) {
+  color: #CBD5E1;
+}
+
+html.dark :where(.text-slate-600) {
+  color: #94A3B8;
+}
+
+html.dark :where(.text-slate-500) {
+  color: #94A3B8;
+}
+
+html.dark :where(.text-slate-400) {
+  color: #64748B;
+}
+
+html.dark :where(input, select, textarea) {
+  background-color: #020617;
+  color: #F1F5F9;
+  border-color: #334155;
+}
+
+html.dark :where(input::placeholder, textarea::placeholder) {
+  color: #64748B;
+}
+
+/* Preserve readable dark contrast on intentional light-mode dark hero cards */
+html.dark :where(.bg-slate-900) {
+  background-color: #1E293B;
+  border-color: #334155;
+}
+
+html.dark :where(.bg-slate-900 .text-white),
+html.dark :where(.bg-slate-900.text-white) {
+  color: #FFFFFF;
+}
+
+html.dark :where(.bg-slate-900 .text-slate-300) {
+  color: #CBD5E1;
+}
+
+html.dark :where(.bg-slate-900 .text-slate-400) {
+  color: #94A3B8;
+}
+
+html.dark :where(.bg-emerald-50) {
+  background-color: rgba(6, 78, 59, 0.35);
+}
+html.dark :where(.border-emerald-200) {
+  border-color: rgba(16, 185, 129, 0.35);
+}
+html.dark :where(.text-emerald-900) {
+  color: #A7F3D0;
+}
+html.dark :where(.text-emerald-800) {
+  color: #6EE7B7;
+}
+html.dark :where(.text-emerald-700) {
+  color: #4ADE80;
+}
+
+html.dark :where(.bg-red-50) {
+  background-color: rgba(127, 29, 29, 0.35);
+}
+html.dark :where(.border-red-200) {
+  border-color: rgba(239, 68, 68, 0.35);
+}
+html.dark :where(.text-red-900) {
+  color: #FECACA;
+}
+html.dark :where(.text-red-700),
+html.dark :where(.text-red-600) {
+  color: #F87171;
+}
+
+html.dark :where(.bg-amber-50) {
+  background-color: rgba(120, 53, 15, 0.35);
+}
+html.dark :where(.border-amber-200) {
+  border-color: rgba(245, 158, 11, 0.35);
+}
+html.dark :where(.text-amber-900) {
+  color: #FDE68A;
+}
+html.dark :where(.text-amber-700) {
+  color: #FBBF24;
+}
+
+html.dark :where(.bg-sky-50) {
+  background-color: rgba(12, 74, 110, 0.35);
+}
+html.dark :where(.border-sky-200) {
+  border-color: rgba(56, 189, 248, 0.35);
+}
+html.dark :where(.text-sky-900),
+html.dark :where(.text-sky-700) {
+  color: #7DD3FC;
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes duofin-page-enter {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes duofin-tab-enter {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 6px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes duofin-backdrop-enter {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes duofin-chart-enter {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 6px, 0) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes duofin-sheet-enter {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 20px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes duofin-dialog-scale-enter {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes duofin-expand-enter {
+  from {
+    opacity: 0;
+    transform: translate3d(0, -4px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.duofin-page-enter {
+  animation: duofin-page-enter 200ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+.duofin-tab-enter {
+  animation: duofin-tab-enter 180ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+.duofin-backdrop-enter {
+  animation: duofin-backdrop-enter 180ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+.duofin-chart-enter {
+  animation: duofin-chart-enter 240ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+.duofin-sheet-enter {
+  animation: duofin-sheet-enter 220ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+.duofin-dialog-enter {
+  animation: duofin-dialog-scale-enter 200ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+.duofin-expand-enter {
+  animation: duofin-expand-enter 180ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .duofin-page-enter,
+  .duofin-tab-enter,
+  .duofin-backdrop-enter,
+  .duofin-chart-enter,
+  .duofin-sheet-enter,
+  .duofin-dialog-enter,
+  .duofin-expand-enter {
+    animation: none !important;
+  }
+}
+

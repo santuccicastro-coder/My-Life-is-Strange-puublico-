@@ -1,0 +1,539 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Perfil privado do usuário autenticado (PII isolado).",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "email": { "type": "string", "minLength": 3, "maxLength": 160 },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "photoURL": { "type": "string", "maxLength": 500 },
+        "activeHouseholdId": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "displayName", "photoURL", "activeHouseholdId", "createdAt", "updatedAt"]
+    },
+    "Household": {
+      "title": "Household",
+      "description": "Espaço financeiro compartilhado entre até 7 pessoas.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "ownerUid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "memberUids": { "type": "array", "description": "Lista de até 7 UIDs dos membros conectados." },
+        "memberNames": { "type": "object", "description": "Mapa de UID para nome de exibição de cada membro conectado." },
+        "partner1Uid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "partner2Uid": { "type": "string", "maxLength": 128 },
+        "partner1Name": { "type": "string", "minLength": 1, "maxLength": 50 },
+        "partner2Name": { "type": "string", "minLength": 1, "maxLength": 50 },
+        "periodStart": { "type": "string", "minLength": 10, "maxLength": 10, "pattern": "^\\d{4}-\\d{2}-01$" },
+        "categories": { "type": "array" },
+        "paymentMethods": { "type": "array" },
+        "rooms": { "type": "array" },
+        "accounts": { "type": "array" },
+        "lastInviteCode": { "type": "string", "maxLength": 64 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "name",
+        "ownerUid",
+        "memberUids",
+        "partner1Uid",
+        "partner2Uid",
+        "partner1Name",
+        "partner2Name",
+        "periodStart",
+        "categories",
+        "paymentMethods",
+        "rooms",
+        "accounts",
+        "lastInviteCode",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "Invite": {
+      "title": "Invite",
+      "description": "Convite de uso único para ingressar no espaço financeiro compartilhado (até 7 pessoas).",
+      "type": "object",
+      "properties": {
+        "householdId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "householdName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "createdByUid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "createdByName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "used": { "type": "boolean" },
+        "usedByUid": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "usedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["householdId", "householdName", "createdByUid", "createdByName", "used", "usedByUid", "createdAt"]
+    },
+    "Transaction": {
+      "title": "Transaction",
+      "description": "Lançamento financeiro (receita, despesa, economia ou transferência).",
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "enum": ["Entrada", "Saída", "Economia", "Transferência"] },
+        "description": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "plannedAmount": { "type": "number" },
+        "actualAmount": { "type": "number" },
+        "category": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "person": { "type": "string", "minLength": 1, "maxLength": 50 },
+        "date": { "type": "string", "minLength": 10, "maxLength": 10, "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "monthKey": { "type": "string", "minLength": 7, "maxLength": 7, "pattern": "^\\d{4}-\\d{2}$" },
+        "paymentMethod": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "accountOrCard": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "cardId": { "type": "string", "maxLength": 128 },
+        "status": { "type": "string", "enum": ["Pago", "Pendente"] },
+        "dueDate": { "type": "string", "maxLength": 10 },
+        "notes": { "type": "string", "maxLength": 300 },
+        "recurringId": { "type": "string", "maxLength": 128 },
+        "recurringMonthKey": { "type": "string", "maxLength": 7 },
+        "createdByUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdByName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "updatedByUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "updatedByName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "type",
+        "description",
+        "plannedAmount",
+        "actualAmount",
+        "category",
+        "person",
+        "date",
+        "monthKey",
+        "paymentMethod",
+        "accountOrCard",
+        "cardId",
+        "status",
+        "dueDate",
+        "notes",
+        "createdByUid",
+        "createdByName",
+        "updatedByUid",
+        "updatedByName",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "Income": {
+      "title": "Income",
+      "description": "Cadastro de salários, rendas recorrentes e rendas extras.",
+      "type": "object",
+      "properties": {
+        "person": { "type": "string", "minLength": 1, "maxLength": 50 },
+        "source": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "amount": { "type": "number" },
+        "frequency": { "type": "string", "enum": ["Mensal", "Quinzenal", "Semanal", "Única", "Anual"] },
+        "receiptDay": { "type": "integer" },
+        "receiptDate": { "type": "string", "maxLength": 10 },
+        "active": { "type": "boolean" },
+        "notes": { "type": "string", "maxLength": 300 },
+        "createdByUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdByName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "updatedByUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "updatedByName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "person",
+        "source",
+        "amount",
+        "frequency",
+        "receiptDay",
+        "receiptDate",
+        "active",
+        "notes",
+        "createdByUid",
+        "createdByName",
+        "updatedByUid",
+        "updatedByName",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "Card": {
+      "title": "Card",
+      "description": "Cartão de crédito com limite, fechamento e vencimento.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "holder": { "type": "string", "minLength": 1, "maxLength": 50 },
+        "limit": { "type": "number" },
+        "closingDay": { "type": "integer" },
+        "dueDay": { "type": "integer" },
+        "color": { "type": "string", "minLength": 4, "maxLength": 20 },
+        "active": { "type": "boolean" },
+        "createdByUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdByName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "updatedByUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "updatedByName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "name",
+        "holder",
+        "limit",
+        "closingDay",
+        "dueDay",
+        "color",
+        "active",
+        "createdByUid",
+        "createdByName",
+        "updatedByUid",
+        "updatedByName",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "Installment": {
+      "title": "Installment",
+      "description": "Compra parcelada distribuída nos meses seguintes.",
+      "type": "object",
+      "properties": {
+        "description": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "cardId": { "type": "string", "maxLength": 128 },
+        "cardName": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "person": { "type": "string", "minLength": 1, "maxLength": 50 },
+        "category": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "totalAmount": { "type": "number" },
+        "installmentsCount": { "type": "integer" },
+        "firstChargeDate": { "type": "string", "minLength": 10, "maxLength": 10, "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "notes": { "type": "string", "maxLength": 300 },
+        "createdByUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdByName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "updatedByUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "updatedByName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "description",
+        "cardId",
+        "cardName",
+        "person",
+        "category",
+        "totalAmount",
+        "installmentsCount",
+        "firstChargeDate",
+        "notes",
+        "createdByUid",
+        "createdByName",
+        "updatedByUid",
+        "updatedByName",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "Goal": {
+      "title": "Goal",
+      "description": "Meta financeira / reserva de economia com rendimento e projeção.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "targetAmount": { "type": "number" },
+        "currentAmount": { "type": "number" },
+        "monthlyContribution": { "type": "number" },
+        "annualYieldRate": { "type": "number" },
+        "notes": { "type": "string", "maxLength": 300 },
+        "createdByUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdByName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "updatedByUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "updatedByName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "name",
+        "targetAmount",
+        "currentAmount",
+        "monthlyContribution",
+        "annualYieldRate",
+        "notes",
+        "createdByUid",
+        "createdByName",
+        "updatedByUid",
+        "updatedByName",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "GoalMovement": {
+      "title": "GoalMovement",
+      "description": "Movimentação (depósito ou retirada) em uma meta de economia.",
+      "type": "object",
+      "properties": {
+        "goalId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "goalName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "type": { "type": "string", "enum": ["Depósito", "Retirada"] },
+        "amount": { "type": "number" },
+        "date": { "type": "string", "minLength": 10, "maxLength": 10, "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "person": { "type": "string", "minLength": 1, "maxLength": 50 },
+        "notes": { "type": "string", "maxLength": 300 },
+        "createdByUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdByName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "goalId",
+        "goalName",
+        "type",
+        "amount",
+        "date",
+        "person",
+        "notes",
+        "createdByUid",
+        "createdByName",
+        "createdAt"
+      ]
+    },
+    "PlannedPurchase": {
+      "title": "PlannedPurchase",
+      "description": "Item planejado de compra do casal com prioridade, orçamento e comparação de preço real.",
+      "type": "object",
+      "properties": {
+        "priority": { "type": "integer" },
+        "room": { "type": "string", "minLength": 1, "maxLength": 50 },
+        "product": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "brandModel": { "type": "string", "maxLength": 100 },
+        "specs": { "type": "string", "maxLength": 200 },
+        "quantity": { "type": "integer" },
+        "estimatedUnitPrice": { "type": "number" },
+        "actualUnitPrice": { "type": "number" },
+        "hasActualPrice": { "type": "boolean" },
+        "targetDate": { "type": "string", "maxLength": 10 },
+        "purchaseDate": { "type": "string", "maxLength": 10 },
+        "paymentMethod": { "type": "string", "maxLength": 40 },
+        "status": { "type": "string", "enum": ["Pendente", "Pesquisando", "Comprado", "Cancelado"] },
+        "notes": { "type": "string", "maxLength": 300 },
+        "createdByUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdByName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "updatedByUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "updatedByName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "priority",
+        "room",
+        "product",
+        "brandModel",
+        "specs",
+        "quantity",
+        "estimatedUnitPrice",
+        "actualUnitPrice",
+        "hasActualPrice",
+        "targetDate",
+        "purchaseDate",
+        "paymentMethod",
+        "status",
+        "notes",
+        "createdByUid",
+        "createdByName",
+        "updatedByUid",
+        "updatedByName",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "Scenario": {
+      "title": "Scenario",
+      "description": "Simulação financeira salva para projeção de 12 meses.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "expenseChangePct": { "type": "number" },
+        "incomeChangePct": { "type": "number" },
+        "mode": { "type": "string", "enum": ["De uma vez", "Gradual em 12 meses"] },
+        "customBaseExpense": { "type": "number" },
+        "useCustomBaseExpense": { "type": "boolean" },
+        "createdByUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdByName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "updatedByUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "updatedByName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "name",
+        "expenseChangePct",
+        "incomeChangePct",
+        "mode",
+        "customBaseExpense",
+        "useCustomBaseExpense",
+        "createdByUid",
+        "createdByName",
+        "updatedByUid",
+        "updatedByName",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "RecurringItem": {
+      "title": "RecurringItem",
+      "description": "Ganho ou despesa fixa recorrente projetada automaticamente nos meses seguintes.",
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "enum": ["Entrada", "Saída"] },
+        "description": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "amount": { "type": "number" },
+        "category": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "person": { "type": "string", "minLength": 1, "maxLength": 50 },
+        "frequency": { "type": "string", "enum": ["Mensal", "Quinzenal", "Semanal", "Anual"] },
+        "dayOfMonth": { "type": "integer" },
+        "startMonthKey": { "type": "string", "minLength": 7, "maxLength": 7, "pattern": "^\\d{4}-\\d{2}$" },
+        "endMonthKey": { "type": "string", "maxLength": 7 },
+        "paymentMethod": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "accountOrCard": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "cardId": { "type": "string", "maxLength": 128 },
+        "active": { "type": "boolean" },
+        "notes": { "type": "string", "maxLength": 300 },
+        "createdByUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdByName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "updatedByUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "updatedByName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "type",
+        "description",
+        "amount",
+        "category",
+        "person",
+        "frequency",
+        "dayOfMonth",
+        "startMonthKey",
+        "endMonthKey",
+        "paymentMethod",
+        "accountOrCard",
+        "cardId",
+        "active",
+        "notes",
+        "createdByUid",
+        "createdByName",
+        "updatedByUid",
+        "updatedByName",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "AiChatMessage": {
+      "title": "AiChatMessage",
+      "description": "Mensagem salva no histórico do Assistente Financeiro IA do casal.",
+      "type": "object",
+      "properties": {
+        "role": { "type": "string", "enum": ["user", "model"] },
+        "text": { "type": "string", "minLength": 1, "maxLength": 8000 },
+        "mode": { "type": "string", "enum": ["fast", "general", "deep"] },
+        "modelUsed": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "createdByUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdByName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["role", "text", "mode", "modelUsed", "createdByUid", "createdByName", "createdAt"]
+    },
+    "BankAccount": {
+      "title": "BankAccount",
+      "description": "Conta bancária ou carteira com saldo cadastrado pelo usuário.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "institution": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "type": { "type": "string", "enum": ["Corrente", "Poupança", "Carteira", "Investimento", "Outro"] },
+        "balance": { "type": "number" },
+        "annualYieldRate": { "type": "number" },
+        "currency": { "type": "string", "minLength": 3, "maxLength": 10 },
+        "lastSyncedAt": { "type": "string", "maxLength": 40 },
+        "active": { "type": "boolean" },
+        "createdByUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdByName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "updatedByUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "updatedByName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "name",
+        "institution",
+        "type",
+        "balance",
+        "currency",
+        "lastSyncedAt",
+        "active",
+        "createdByUid",
+        "createdByName",
+        "updatedByUid",
+        "updatedByName",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Perfis privados dos usuários autenticados."
+    },
+    "/households/{householdId}": {
+      "schema": { "$ref": "#/entities/Household" },
+      "description": "Espaço financeiro compartilhado (máximo 7 membros)."
+    },
+    "/invites/{inviteId}": {
+      "schema": { "$ref": "#/entities/Invite" },
+      "description": "Convites de uso único para ingressar em um espaço compartilhado."
+    },
+    "/households/{householdId}/transactions/{transactionId}": {
+      "schema": { "$ref": "#/entities/Transaction" },
+      "description": "Lançamentos financeiros compartilhados."
+    },
+    "/households/{householdId}/recurringItems/{itemId}": {
+      "schema": { "$ref": "#/entities/RecurringItem" },
+      "description": "Ganhos e despesas fixas com projeção automática nos meses futuros."
+    },
+    "/households/{householdId}/incomes/{incomeId}": {
+      "schema": { "$ref": "#/entities/Income" },
+      "description": "Fontes de renda recorrentes ou extras."
+    },
+    "/households/{householdId}/cards/{cardId}": {
+      "schema": { "$ref": "#/entities/Card" },
+      "description": "Cartões de crédito cadastrados."
+    },
+    "/households/{householdId}/installments/{installmentId}": {
+      "schema": { "$ref": "#/entities/Installment" },
+      "description": "Compras parceladas."
+    },
+    "/households/{householdId}/goals/{goalId}": {
+      "schema": { "$ref": "#/entities/Goal" },
+      "description": "Metas e reservas financeiras."
+    },
+    "/households/{householdId}/goalMovements/{movementId}": {
+      "schema": { "$ref": "#/entities/GoalMovement" },
+      "description": "Histórico de depósitos e retiradas das metas."
+    },
+    "/households/{householdId}/plannedPurchases/{purchaseId}": {
+      "schema": { "$ref": "#/entities/PlannedPurchase" },
+      "description": "Lista de compras planejadas."
+    },
+    "/households/{householdId}/scenarios/{scenarioId}": {
+      "schema": { "$ref": "#/entities/Scenario" },
+      "description": "Cenários financeiros simulados."
+    },
+    "/households/{householdId}/aiMessages/{messageId}": {
+      "schema": { "$ref": "#/entities/AiChatMessage" },
+      "description": "Histórico persistente de conversas com o Assistente IA."
+    },
+    "/households/{householdId}/bankAccounts/{accountId}": {
+      "schema": { "$ref": "#/entities/BankAccount" },
+      "description": "Contas bancárias e carteiras com saldo atualizado."
+    }
+  }
+}
