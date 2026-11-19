@@ -21,7 +21,6 @@ import type { AppRoute } from '../types/finance';
 import {
   computePaymentReminders,
   getCurrentMonthKey,
-  getHouseholdMembersList,
 } from '../utils/financeCalculations';
 import { OfflineIndicator } from './OfflineIndicator';
 import { PWAInstallButton } from './PWAInstallButton';
@@ -39,7 +38,7 @@ const NAV_ITEMS: Array<{ id: AppRoute; label: string; icon: React.ComponentType<
   { id: 'lancamentos', label: 'Lançamentos', icon: LayoutList },
   { id: 'lembretes', label: 'Lembretes de Pagamento', icon: Bell },
   { id: 'horizonte', label: 'Horizonte de Gastos', icon: CalendarRange },
-  { id: 'economias', label: 'Investimentos e Cofrinho', icon: PiggyBank },
+  { id: 'economias', label: 'Investimentos e Caixinhas', icon: PiggyBank },
   { id: 'cartoes', label: 'Cartões e Faturas', icon: CreditCard },
   { id: 'fixos', label: 'Contas Fixas', icon: Repeat },
   { id: 'renda', label: 'Renda', icon: TrendingUp },
@@ -75,7 +74,6 @@ export function AppShell({ route, onNavigate, onQuickAdd, children }: AppShellPr
   const effectiveRoute = normalizeHubRoute(route);
   const activeItem = NAV_ITEMS.find((i) => i.id === effectiveRoute) ?? NAV_ITEMS[0];
   const isSecondaryRoute = !MOBILE_PRIMARY_TABS.some((t) => t.id === effectiveRoute);
-  const membersList = getHouseholdMembersList(household);
 
   const remindersSummary = useMemo(
     () =>
@@ -103,11 +101,7 @@ export function AppShell({ route, onNavigate, onQuickAdd, children }: AppShellPr
           </div>
           {household && (
             <p className="text-xs text-slate-500 mt-1 truncate">
-              {membersList.length > 2
-                ? `${membersList.slice(0, 2).map((m) => m.name).join(', ')} +${membersList.length - 2}`
-                : membersList.length === 2
-                  ? `${membersList[0].name} & ${membersList[1].name}`
-                  : `${household.partner1Name}`}
+              {household.name || currentAuthorName}
             </p>
           )}
         </div>
@@ -163,7 +157,7 @@ export function AppShell({ route, onNavigate, onQuickAdd, children }: AppShellPr
           <div className="min-w-0">
             <p className="text-xs font-semibold text-slate-900 dark:text-slate-100 truncate">{currentAuthorName}</p>
             <p className="text-xs text-slate-400 truncate">
-              {household ? `Nuvem: ${household.memberUids.length}/7 pessoas` : 'Espaço compartilhado'}
+              Planejamento pessoal
             </p>
           </div>
           <button

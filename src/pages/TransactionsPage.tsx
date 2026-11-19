@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { CheckCircle2, Circle, Download, Pencil, Plus, Search, Trash2 } from 'lucide-react';
 import { useFinance } from '../context/AuthHouseholdContext';
+import { auth } from '../firebase';
 import type { Transaction, TransactionStatus, TransactionType } from '../types/finance';
 import { formatBRL, formatDateBR, formatMonthFull, getHouseholdPeople } from '../utils/financeCalculations';
 
@@ -68,9 +69,14 @@ export function TransactionsPage({ onQuickAdd, onEditTransaction }: Transactions
   const handleExportCsv = async () => {
     setExporting(true);
     try {
+      const token = await auth.currentUser?.getIdToken();
+      if (!token) throw new Error('Sessão expirada.');
       const res = await fetch('/api/export-csv', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({ rows: filtered }),
       });
       if (!res.ok) throw new Error('Falha ao exportar');
@@ -92,7 +98,7 @@ export function TransactionsPage({ onQuickAdd, onEditTransaction }: Transactions
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-900">Lançamentos</h1>
           <p className="text-sm text-slate-500 mt-0.5">
-            Movimentações do dia a dia do casal. Salários fixos ficam em Renda e parcelamentos em Parcelamentos.
+            Movimentações do dia a dia. Salários fixos ficam em Renda e parcelamentos em Parcelamentos.
           </p>
         </div>
 

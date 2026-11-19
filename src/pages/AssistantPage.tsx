@@ -11,6 +11,7 @@ import {
   Volume2,
 } from 'lucide-react';
 import { useFinance } from '../context/AuthHouseholdContext';
+import { auth } from '../firebase';
 import type { AiChatMode, AppRoute } from '../types/finance';
 import {
   buildCoupleFinancialContextSummary,
@@ -201,9 +202,17 @@ export function AssistantPage({ onNavigate }: AssistantPageProps) {
         modelUsed: mode === 'fast' ? 'gemini-3.1-flash-lite' : 'gemini-4-hydrogen',
       });
 
+      const token = await auth.currentUser?.getIdToken();
+      if (!token) {
+        throw new Error('Sessão expirada. Faça login novamente para usar o assistente.');
+      }
+
       const res = await fetch('/api/ai/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({
           messages: historyPayload,
           mode,
@@ -351,12 +360,17 @@ export function AssistantPage({ onNavigate }: AssistantPageProps) {
       mediaStreamRef.current = stream;
       nextStartTimeRef.current = outputCtx.currentTime;
 
+      const token = await auth.currentUser?.getIdToken();
+      if (!token) {
+        throw new Error('Sessão expirada. Faça login novamente para usar a voz em tempo real.');
+      }
+
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const ws = new WebSocket(`${protocol}//${window.location.host}/api/ai/live`);
+      const ws = new WebSocket(`${protocol}//${window.location.host}/api/ai/live?token=${encodeURIComponent(token)}`);
       wsRef.current = ws;
 
       ws.onopen = () => {
-        ws.send(JSON.stringify({ type: 'init', contextSummary }));
+        ws.send(JSON.stringify({ type: 'init', token, contextSummary }));
 
         const source = inputCtx.createMediaStreamSource(stream);
         const processor = inputCtx.createScriptProcessor(4096, 1, 1);
@@ -458,7 +472,7 @@ export function AssistantPage({ onNavigate }: AssistantPageProps) {
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-900">Assistente Financeiro IA</h1>
           <p className="text-sm text-slate-500 mt-0.5">
-            Converse por texto ou voz em tempo real com base nos dados reais do casal ({formatMonthShort(getCurrentMonthKey())}).
+            Converse por texto ou voz em tempo real com base nos seus dados reais ({formatMonthShort(getCurrentMonthKey())}).
           </p>
         </div>
 
@@ -604,7 +618,7 @@ export function AssistantPage({ onNavigate }: AssistantPageProps) {
             {sending && (
               <div className="flex justify-start">
                 <div className="bg-slate-100 border border-slate-200 rounded-2xl rounded-bl-sm px-4 py-3 text-xs text-slate-500">
-                  Analisando números do casal...
+                  Analisando seus números...
                 </div>
               </div>
             )}
@@ -653,7 +667,7 @@ export function AssistantPage({ onNavigate }: AssistantPageProps) {
                 <h2 className="text-base font-semibold text-slate-900">Conversa por Voz em Tempo Real</h2>
               </div>
               <p className="text-xs text-slate-500">
-                Fale naturalmente sobre o orçamento do casal, compras futuras ou metas e receba resposta falada imediata.
+                Fale naturalmente sobre o seu orçamento, compras futuras ou metas e receba resposta falada imediata.
               </p>
             </div>
 

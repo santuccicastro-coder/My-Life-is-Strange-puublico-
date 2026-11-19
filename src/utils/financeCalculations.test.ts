@@ -1,7 +1,12 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  DEFAULT_BENCHMARK_INDICATORS,
+  compareInvestmentModalities,
+  computeBalanceBreakdown,
+  computeCardLimitUsage,
   computeFirstCreditInstallmentDate,
+  computeFreeMoneyProjection,
   computeGoalProjection,
   computeHomeRealizedAndDailyMetrics,
   computeInstallmentSummary,
@@ -11,27 +16,39 @@ import {
   computeNegativeBalanceIncomeOffsets,
   computePaymentReminders,
   computePlannedPurchaseMetrics,
+  computePoupancaAnnualPct,
+  computeProjectsPortfolioSummary,
   computeQuickInterest,
   computeScenarioAnalysis,
   computeShortHorizon,
   computeSpendingHorizon,
   computeWeeklyRollupFromShortHorizon,
   formatDeviceBalanceTimestamp,
+  getBrazilianIOFRate,
+  getBrazilianIRRate,
+  getCadenceOccurrencesInMonth,
   getCardInvoiceInMonth,
   getHouseholdPeople,
+  getIncomeAmountInMonth,
+  getIncomeOccurrenceDatesInMonth,
   getInstallmentAmountInMonth,
+  getInstallmentSchedule,
   getMonthKeysFromStart,
   getMonthKeysRange,
   getRecurringItemAmountInMonth,
   getTotalFixedAndConfiguredIncomeInMonth,
   parseSignedDecimal,
+  queryFreeMoneyAtDate,
+  resolveInvestmentAnnualRatePct,
   resolveTransactionSignAndType,
   sanitizeSignedDecimalInput,
+  simulateInvestmentGrowth,
 } from './financeCalculations.ts';
 import type {
   BankAccount,
   CreditCard,
   Goal,
+  HorizonScenarioRule,
   Household,
   Income,
   Installment,
@@ -64,11 +81,33 @@ describe('Finance Calculations Engine', () => {
       ...audit,
     };
 
-    const summary = computeInstallmentSummary(inst, '2026-11');
-    assert.equal(summary.installmentValue, 300);
-    assert.equal(summary.paidInstallments, 3);
-    assert.equal(summary.remainingInstallments, 9);
-    assert.equal(summary.remainingAmount, 2700);
+    // Sem baixas manuais registradas, parcelas vencidas (set e out frente a 2026-11) NÃO são marcadas pagas automaticamente
+    const summaryUnpaid = computeInstallmentSummary(inst, '2026-11');
+    assert.equal(summaryUnpaid.installmentValue, 300);
+    assert.equal(summaryUnpaid.paidInstallments, 0);
+    assert.equal(summaryUnpaid.overdueInstallments, 2);
+    assert.equal(summaryUnpaid.overdueAmount, 600);
+    assert.equal(summaryUnpaid.remainingInstallments, 12);
+    assert.equal(summaryUnpaid.remainingAmount, 3600);
+
+    // Com controle individual pago explicitamente nas parcelas 1, 2 e 3
+    const summaryPaid = computeInstallmentSummary(
+      { ...inst, paidInstallmentNumbers: [1, 2, 3] },
+      '2026-11'
+    );
+    assert.equal(summaryPaid.paidInstallments, 3);
+    assert.equal(summaryPaid.overdueInstallments, 0);
+    assert.equal(summaryPaid.remainingInstallments, 9);
+    assert.equal(summaryPaid.remainingAmount, 2700);
+
+    const schedule = getInstallmentSchedule({ ...inst, paidInstallmentNumbers: [1] }, '2026-11');
+    assert.equal(schedule[0].isPaid, true);
+    assert.equal(schedule[0].isOverdue, false);
+    assert.equal(schedule[1].isPaid, false);
+    assert.equal(schedule[1].isOverdue, true);
+    assert.equal(schedule[2].isPaid, false);
+    assert.equal(schedule[2].isCurrent, true);
+
     assert.equal(getInstallmentAmountInMonth(inst, '2026-08'), 0);
     assert.equal(getInstallmentAmountInMonth(inst, '2026-09'), 300);
     assert.equal(getInstallmentAmountInMonth(inst, '2027-08'), 300);
@@ -1782,10 +1821,1196 @@ describe('Finance Calculations Engine', () => {
     assert.equal(horizon.rows[0].monthKey, '2026-12');
     assert.equal(horizon.rows[0].simulatedSurplus, 3500);
   });
+
+  it('computes Semanal and Quinzenal incomes strictly by effective receipt dates across months, calendar, and horizon', () => {
+    // 2026-10-02 é sexta-feira. A cada 14 dias em outubro: 02, 16 e 30 (3 recebimentos em out/2026!)
+    // Em novembro (a cada 14 dias): 13 e 27 (2 recebimentos em nov/2026!)
+    const biweeklyInc: Income = {
+      id: 'inc-bi',
+      person: 'Ana',
+      source: 'Freela Quinzenal',
+      amount: 1000,
+      frequency: 'Quinzenal',
+      receiptDay: 2,
+      receiptDate: '2026-10-02',
+      active: true,
+      notes: '',
+      ...audit,
+    };
+
+    const octDates = getIncomeOccurrenceDatesInMonth(biweeklyInc, '2026-10');
+    const novDates = getIncomeOccurrenceDatesInMonth(biweeklyInc, '2026-11');
+    assert.deepEqual(octDates, ['2026-10-02', '2026-10-16', '2026-10-30']);
+    assert.deepEqual(novDates, ['2026-11-13', '2026-11-27']);
+    assert.equal(getIncomeAmountInMonth(biweeklyInc, '2026-10'), 3000);
+    assert.equal(getIncomeAmountInMonth(biweeklyInc, '2026-11'), 2000);
+
+    // Semanal ancorado em 2026-11-02 (segunda-feira): 02, 09, 16, 23, 30 -> 5 ocorrências!
+    const weeklyDatesNov = getCadenceOccurrencesInMonth({
+      monthKey: '2026-11',
+      frequency: 'Semanal',
+      dayOfMonth: 2,
+      anchorDateISO: '2026-11-02',
+    });
+    assert.deepEqual(weeklyDatesNov, [
+      '2026-11-02',
+      '2026-11-09',
+      '2026-11-16',
+      '2026-11-23',
+      '2026-11-30',
+    ]);
+
+    const weeklyInc: Income = {
+      id: 'inc-wk',
+      person: 'Bruno',
+      source: 'Diárias Semanais',
+      amount: 500,
+      frequency: 'Semanal',
+      receiptDay: 2,
+      receiptDate: '2026-11-02',
+      active: true,
+      notes: '',
+      ...audit,
+    };
+
+    const panel = computeMonthlyPanel(['2026-10', '2026-11'], [biweeklyInc, weeklyInc], [], []);
+    assert.equal(panel[0].totalEntries, 3000); // out: apenas quinzenal (semanal inicia em 2026-11-02)
+    assert.equal(panel[1].totalEntries, 2000 + 2500); // nov: 2*1000 + 5*500 = 4500
+
+    const cal = computeMonthCalendarData({
+      monthKey: '2026-11',
+      transactions: [],
+      recurringItems: [],
+      incomes: [weeklyInc],
+      cards: [],
+      installments: [],
+    });
+    assert.equal(cal.daySummaries['2026-11-30']?.entriesTotal, 500);
+  });
+
+  it('avoids double counting credit card purchases and paid invoice markers while tracking open card limit accurately', () => {
+    const card: CreditCard = {
+      id: 'card-1',
+      name: 'Nubank',
+      holder: 'Ana',
+      limit: 5000,
+      closingDay: 10,
+      dueDay: 18,
+      color: '#7C3AED',
+      active: true,
+      ...audit,
+    };
+
+    const txCardNov: Transaction = {
+      id: 'tx-c-1',
+      type: 'Saída',
+      description: 'Farmácia',
+      plannedAmount: 200,
+      actualAmount: 200,
+      category: 'Saúde',
+      person: 'Ana',
+      date: '2026-11-04',
+      monthKey: '2026-11',
+      paymentMethod: 'Crédito',
+      accountOrCard: 'Nubank',
+      cardId: 'card-1',
+      status: 'Pago',
+      dueDate: '',
+      notes: '',
+      ...audit,
+    };
+
+    const inst: Installment = {
+      id: 'inst-c-1',
+      description: 'Celular',
+      cardId: 'card-1',
+      cardName: 'Nubank',
+      person: 'Ana',
+      category: 'Outros',
+      totalAmount: 1200,
+      installmentsCount: 3, // 400 em 2026-11, 400 em 2026-12, 400 em 2027-01
+      firstChargeDate: '2026-11-05',
+      paidInstallmentNumbers: [],
+      notes: '',
+      ...audit,
+    };
+
+    // Caso 1: Fatura de 2026-11 ainda não foi paga (total = 200 + 400 = 600)
+    const usageOpen = computeCardLimitUsage({
+      card,
+      refMonthKey: '2026-11',
+      transactions: [txCardNov],
+      installments: [inst],
+      recurringItems: [],
+    });
+    assert.equal(usageOpen.isSelectedInvoicePaid, false);
+    assert.equal(usageOpen.usedLimit, 1400); // 1200 parcelas abertas + 200 compra crédito
+    assert.equal(usageOpen.availableLimit, 3600);
+
+    // Caso 2: Fatura de 2026-11 paga via marcador (não pode duplicar no painel nem nos gastos realizados)
+    const invoicePaidTx: Transaction = {
+      id: 'tx-inv-nov',
+      type: 'Saída', // Mesmo que salvo como Saída manualmente, recurringId card-invoice- não duplica!
+      description: 'Fatura Nubank',
+      plannedAmount: 600,
+      actualAmount: 600,
+      category: 'Cartão',
+      person: 'Ana',
+      date: '2026-11-18',
+      monthKey: '2026-11',
+      paymentMethod: 'Pix',
+      accountOrCard: 'Conta Corrente',
+      cardId: 'card-1',
+      status: 'Pago',
+      dueDate: '2026-11-18',
+      recurringId: 'card-invoice-card-1',
+      recurringMonthKey: '2026-11',
+      notes: '',
+      ...audit,
+    };
+
+    const [panelNov] = computeMonthlyPanel(
+      ['2026-11'],
+      [],
+      [txCardNov, invoicePaidTx],
+      [inst],
+      [],
+      [],
+      '2026-11-18',
+      [card]
+    );
+    assert.equal(panelNov.totalExpenses, 600); // 200 compra + 400 parcela (sem somar 600 do marcador de novo)
+
+    const usagePaid = computeCardLimitUsage({
+      card,
+      refMonthKey: '2026-11',
+      transactions: [txCardNov, invoicePaidTx],
+      installments: [inst],
+      recurringItems: [],
+    });
+    assert.equal(usagePaid.isSelectedInvoicePaid, true);
+    // Fatura de nov paga liberou a compra à vista (200) e a parcela 1 (400), restando 800 das parcelas 2 e 3
+    assert.equal(usagePaid.usedLimit, 800);
+    assert.equal(usagePaid.availableLimit, 4200);
+
+    const shortRes = computeShortHorizon({
+      daysCount: 30,
+      startDateISO: '2026-11-01',
+      bankAccounts: [
+        {
+          id: 'ba-1',
+          name: 'Conta Corrente',
+          institution: 'Banco',
+          type: 'Corrente',
+          balance: 2000,
+          currency: 'BRL',
+          lastSyncedAt: '',
+          active: true,
+          ...audit,
+        },
+      ],
+      incomes: [],
+      transactions: [txCardNov, invoicePaidTx],
+      installments: [inst],
+      recurringItems: [],
+      cards: [card],
+      simulatedPurchases: [],
+    });
+    // Como a fatura de nov já está paga no startBalance, não é subtraída de novo no vencimento dia 18
+    assert.equal(shortRes.summary.endBalance, 2000);
+  });
+
+  it('differentiates saldoBancario, saldoComprometido, saldoLivre, and saldoPrevisto accurately', () => {
+    const bankAccounts: BankAccount[] = [
+      {
+        id: 'ba1',
+        name: 'Conta Corrente',
+        institution: 'Banco',
+        type: 'Corrente',
+        balance: 3000,
+        currency: 'BRL',
+        lastSyncedAt: '',
+        active: true,
+        ...audit,
+      },
+    ];
+    const incomes: Income[] = [
+      {
+        id: 'inc1',
+        person: 'Ana',
+        source: 'Salário',
+        amount: 5000,
+        frequency: 'Mensal',
+        receiptDay: 5,
+        receiptDate: '',
+        active: true,
+        notes: '',
+        ...audit,
+      },
+    ];
+    const card: CreditCard = {
+      id: 'c1',
+      name: 'Visa',
+      holder: 'Ana',
+      limit: 4000,
+      closingDay: 10,
+      dueDay: 18,
+      color: '#0F172A',
+      active: true,
+      ...audit,
+    };
+    const transactions: Transaction[] = [
+      {
+        id: 'tx-in-paid',
+        type: 'Entrada',
+        description: 'Salário já recebido',
+        plannedAmount: 5000,
+        actualAmount: 5000,
+        category: 'Renda',
+        person: 'Ana',
+        date: '2026-11-05',
+        monthKey: '2026-11',
+        paymentMethod: 'Pix',
+        accountOrCard: 'Conta Corrente',
+        cardId: '',
+        status: 'Pago',
+        dueDate: '',
+        notes: '',
+        ...audit,
+      },
+      {
+        id: 'tx-pending-bill',
+        type: 'Saída',
+        description: 'Condomínio pendente',
+        plannedAmount: 700,
+        actualAmount: 700,
+        category: 'Moradia',
+        person: 'Ana',
+        date: '2026-11-22',
+        monthKey: '2026-11',
+        paymentMethod: 'Boleto',
+        accountOrCard: 'Conta Corrente',
+        cardId: '',
+        status: 'Pendente',
+        dueDate: '2026-11-22',
+        notes: '',
+        ...audit,
+      },
+      {
+        id: 'tx-card-open',
+        type: 'Saída',
+        description: 'Restaurante',
+        plannedAmount: 300,
+        actualAmount: 300,
+        category: 'Alimentação',
+        person: 'Ana',
+        date: '2026-11-06',
+        monthKey: '2026-11',
+        paymentMethod: 'Crédito',
+        accountOrCard: 'Visa',
+        cardId: 'c1',
+        status: 'Pago',
+        dueDate: '',
+        notes: '',
+        ...audit,
+      },
+    ];
+    const recurringItems: RecurringItem[] = [
+      {
+        id: 'rec-luz',
+        type: 'Saída',
+        description: 'Luz',
+        amount: 200,
+        category: 'Moradia',
+        person: 'Ana',
+        frequency: 'Mensal',
+        dayOfMonth: 25,
+        startMonthKey: '2026-01',
+        endMonthKey: '',
+        paymentMethod: 'Pix',
+        accountOrCard: 'Conta Corrente',
+        cardId: '',
+        active: true,
+        notes: '',
+        ...audit,
+      },
+    ];
+
+    const breakdown = computeBalanceBreakdown({
+      monthKey: '2026-11',
+      todayISO: '2026-11-15',
+      bankAccounts,
+      incomes,
+      transactions,
+      installments: [],
+      recurringItems,
+      cards: [card],
+    });
+
+    // Saldo bancário = 3000
+    assert.equal(breakdown.saldoBancario, 3000);
+    // Comprometido = 700 condomínio pendente + 200 luz fixa + 300 fatura aberta = 1200
+    assert.equal(breakdown.saldoComprometido, 1200);
+    // Livre = 3000 - 1200 = 1800
+    assert.equal(breakdown.saldoLivre, 1800);
+    // Entradas previstas = 5000 (renda) + 5000 (tx) -> pendentes = 5000; previsto = 3000 + 5000 - 1200 = 6800
+    assert.equal(breakdown.entradasPendentes, 5000);
+    assert.equal(breakdown.saldoPrevisto, 6800);
+  });
 });
 
+describe('Prompt 3 & Prompt 4 — Credit Hub & Free Money Projection Engine', () => {
+  it('handles full invoice lifecycle (spot, post-closing, installment, partial/full payment, overdue, estorno, anticipation, limit rules)', () => {
+    const cardTotalRule: CreditCard = {
+      id: 'card-main',
+      name: 'Nubank Principal',
+      holder: 'Ana',
+      limit: 5000,
+      closingDay: 10,
+      dueDay: 18,
+      color: '#7C3AED',
+      active: true,
+      limitRule: 'total_parcelamento',
+      ...audit,
+    };
 
+    const cardMonthlyRule: CreditCard = {
+      ...cardTotalRule,
+      id: 'card-monthly',
+      limitRule: 'parcela_mensal',
+    };
 
+    // Compra antes do fechamento (cai na fatura de 2026-11) e compra após fechamento (dia 12 > closingDay 10 -> cai em 2026-12)
+    const txSpotNov: Transaction = {
+      id: 'tx-spot-1',
+      type: 'Saída',
+      description: 'Mercado Crédito',
+      plannedAmount: 400,
+      actualAmount: 400,
+      category: 'Alimentação',
+      person: 'Ana',
+      date: '2026-11-05',
+      monthKey: '2026-11',
+      paymentMethod: 'Crédito',
+      accountOrCard: 'Nubank Principal',
+      cardId: 'card-main',
+      status: 'Pago',
+      dueDate: '',
+      notes: '',
+      ...audit,
+    };
 
+    const txAfterCloseNov: Transaction = {
+      id: 'tx-after-close',
+      type: 'Saída',
+      description: 'Farmácia Pós-Fechamento',
+      plannedAmount: 250,
+      actualAmount: 250,
+      category: 'Saúde',
+      person: 'Ana',
+      date: '2026-11-12',
+      monthKey: '2026-12', // Roteada pela data de fechamento para dezembro
+      paymentMethod: 'Crédito',
+      accountOrCard: 'Nubank Principal',
+      cardId: 'card-main',
+      status: 'Pago',
+      dueDate: '',
+      notes: '',
+      ...audit,
+    };
 
+    const estornoMercado: Transaction = {
+      id: 'tx-refund-1',
+      type: 'Entrada',
+      description: 'Estorno Mercado Crédito',
+      plannedAmount: 100,
+      actualAmount: 100,
+      category: 'Estorno',
+      person: 'Ana',
+      date: '2026-11-08',
+      monthKey: '2026-11',
+      paymentMethod: 'Crédito',
+      accountOrCard: 'Nubank Principal',
+      cardId: 'card-main',
+      status: 'Pago',
+      dueDate: '',
+      entryKind: 'estorno',
+      refundTargetId: 'tx-spot-1',
+      notes: '',
+      ...audit,
+    };
 
+    const instNotebook: Installment = {
+      id: 'inst-note',
+      description: 'Notebook',
+      cardId: 'card-main',
+      cardName: 'Nubank Principal',
+      person: 'Ana',
+      category: 'Eletrônicos',
+      totalAmount: 1200,
+      installmentsCount: 4, // 300 por mês em 2026-11, 2026-12, 2027-01, 2027-02
+      firstChargeDate: '2026-11-05',
+      paidInstallmentNumbers: [],
+      prepaidInstallmentNumbers: [],
+      cancelledInstallmentNumbers: [],
+      refundedAmount: 0,
+      status: 'Ativo',
+      notes: '',
+      ...audit,
+    };
+
+    // 1. Fatura aberta antes do fechamento (2026-11-09): 400 - 100 estorno + 300 parcela 1 = 600
+    const invOpen = getCardInvoiceInMonth(
+      cardTotalRule,
+      '2026-11',
+      [txSpotNov, txAfterCloseNov, estornoMercado],
+      [instNotebook],
+      [],
+      '2026-11-09'
+    );
+    assert.equal(invOpen.grossTotal, 700);
+    assert.equal(invOpen.refundsTotal, 100);
+    assert.equal(invOpen.total, 600);
+    assert.equal(invOpen.status, 'Aberta');
+
+    // 2. Fatura fechada entre dia 10 e dia 18 (2026-11-14)
+    const invClosed = getCardInvoiceInMonth(
+      cardTotalRule,
+      '2026-11',
+      [txSpotNov, txAfterCloseNov, estornoMercado],
+      [instNotebook],
+      [],
+      '2026-11-14'
+    );
+    assert.equal(invClosed.status, 'Fechada');
+
+    // 3. Fatura vencida após dia 18 sem pagamento integral (2026-11-20)
+    const invOverdue = getCardInvoiceInMonth(
+      cardTotalRule,
+      '2026-11',
+      [txSpotNov, txAfterCloseNov, estornoMercado],
+      [instNotebook],
+      [],
+      '2026-11-20'
+    );
+    assert.equal(invOverdue.status, 'Vencida');
+    assert.equal(invOverdue.isOverdue, true);
+
+    // 4. Pagamento parcial de R$ 200 -> reduz remainingAmount para 400 e marca 'Parcialmente paga'
+    const partialPayTx: Transaction = {
+      id: 'tx-pay-part',
+      type: 'Saída',
+      description: 'Pagamento parcial fatura Nubank',
+      plannedAmount: 200,
+      actualAmount: 200,
+      category: 'Cartão',
+      person: 'Ana',
+      date: '2026-11-16',
+      monthKey: '2026-11',
+      paymentMethod: 'Pix',
+      accountOrCard: 'Conta Principal',
+      cardId: 'card-main',
+      status: 'Pago',
+      dueDate: '2026-11-18',
+      recurringId: 'card-invoice-card-main',
+      recurringMonthKey: '2026-11',
+      entryKind: 'pagamento_fatura',
+      notes: '',
+      ...audit,
+    };
+
+    const invPartial = getCardInvoiceInMonth(
+      cardTotalRule,
+      '2026-11',
+      [txSpotNov, txAfterCloseNov, estornoMercado, partialPayTx],
+      [instNotebook],
+      [],
+      '2026-11-16'
+    );
+    assert.equal(invPartial.status, 'Parcialmente paga');
+    assert.equal(invPartial.paidAmount, 200);
+    assert.equal(invPartial.remainingAmount, 400);
+
+    // Regra de limite total_parcelamento vs parcela_mensal com antecipação de 1 parcela (#4)
+    const instWithAnticipation: Installment = {
+      ...instNotebook,
+      prepaidInstallmentNumbers: [4],
+    };
+    const instMonthlyCard: Installment = {
+      ...instWithAnticipation,
+      cardId: 'card-monthly',
+    };
+    const summaryAnt = computeInstallmentSummary(instWithAnticipation, '2026-11', [cardTotalRule]);
+    assert.equal(summaryAnt.prepaidInstallments, 1);
+    assert.equal(summaryAnt.remainingInstallments, 3); // 4 total - 1 antecipada = 3 restantes
+    assert.equal(summaryAnt.remainingAmount, 900);
+    assert.equal(getInstallmentAmountInMonth(instWithAnticipation, '2027-02'), 0); // parcela 4 zerada
+
+    const usageTotalRule = computeCardLimitUsage({
+      card: cardTotalRule,
+      refMonthKey: '2026-11',
+      transactions: [txSpotNov, txAfterCloseNov, estornoMercado, partialPayTx],
+      installments: [instWithAnticipation],
+      recurringItems: [],
+      todayISO: '2026-11-16',
+    });
+    // Parcelamento compromisso total = 900 (3 restantes), avulsos não pagos = 300 (400-100) + 250 = 550, pagamento parcial já efetuado = -200 => 1250
+    assert.equal(usageTotalRule.usedLimit, 1250);
+    assert.equal(usageTotalRule.availableLimit, 3750);
+
+    const usageMonthlyRule = computeCardLimitUsage({
+      card: cardMonthlyRule,
+      refMonthKey: '2026-11',
+      transactions: [{ ...txSpotNov, cardId: 'card-monthly' }],
+      installments: [instMonthlyCard],
+      recurringItems: [],
+      todayISO: '2026-11-16',
+    });
+    // Regra mensal conta fatura aberta do mês (400 + 300 = 700), sem comprometer parcelas futuras
+    assert.equal(usageMonthlyRule.usedLimit, 700);
+  });
+
+  it('projects Free Money (10 dimensions), answers target date queries, and evaluates all 6 deterministic scenarios', () => {
+    const bankAccounts: BankAccount[] = [
+      {
+        id: 'ba1',
+        name: 'Conta Corrente',
+        institution: 'Banco',
+        type: 'Corrente',
+        balance: 2000,
+        currency: 'BRL',
+        lastSyncedAt: '',
+        active: true,
+        ...audit,
+      },
+    ];
+    const incomes: Income[] = [
+      {
+        id: 'inc-sal',
+        person: 'Ana',
+        source: 'Salário Ana',
+        amount: 4000,
+        frequency: 'Mensal',
+        receiptDay: 5,
+        receiptDate: '',
+        active: true,
+        notes: '',
+        ...audit,
+      },
+    ];
+    const recurringItems: RecurringItem[] = [
+      {
+        id: 'rec-alu',
+        type: 'Saída',
+        description: 'Aluguel',
+        amount: 2500,
+        category: 'Moradia',
+        person: 'Ana',
+        frequency: 'Mensal',
+        dayOfMonth: 10,
+        startMonthKey: '2026-01',
+        endMonthKey: '',
+        paymentMethod: 'Pix',
+        accountOrCard: 'Conta Corrente',
+        cardId: '',
+        active: true,
+        notes: '',
+        ...audit,
+      },
+    ];
+    const card: CreditCard = {
+      id: 'c1',
+      name: 'Visa',
+      holder: 'Ana',
+      limit: 5000,
+      closingDay: 10,
+      dueDay: 15,
+      color: '#0F172A',
+      active: true,
+      ...audit,
+    };
+    const inst: Installment = {
+      id: 'inst-tv',
+      description: 'TV Sala',
+      cardId: 'c1',
+      cardName: 'Visa',
+      person: 'Ana',
+      category: 'Casa',
+      totalAmount: 1200,
+      installmentsCount: 3, // 400 em nov, dez, jan
+      firstChargeDate: '2026-11-02',
+      paidInstallmentNumbers: [],
+      notes: '',
+      ...audit,
+    };
+    const goals: Goal[] = [
+      {
+        id: 'g-emerg',
+        name: 'Reserva Emergência',
+        targetAmount: 20000,
+        currentAmount: 5000,
+        monthlyContribution: 500,
+        annualYieldRate: 0.1,
+        notes: '',
+        ...audit,
+      },
+    ];
+
+    // 1. Projeção de 30 dias a partir de 2026-11-01
+    const proj30 = computeFreeMoneyProjection({
+      mode: 'daily',
+      count: 30,
+      startDateISO: '2026-11-01',
+      bankAccounts,
+      incomes,
+      transactions: [],
+      installments: [inst],
+      recurringItems,
+      cards: [card],
+      goals,
+    });
+
+    assert.equal(proj30.daysCount, 30);
+    assert.equal(proj30.dimensions.saldoBancarioReal, 2000);
+    assert.equal(proj30.dimensions.receitasPrevistas, 4000);
+    assert.equal(proj30.dimensions.compromissosFuturos, 2900); // 2500 aluguel + 400 fatura TV
+    assert.equal(proj30.dimensions.reservasPlanejadas, 500); // reserva meta nov
+    // Identidade: 2000 + 4000 - 2900 - 500 = 2600
+    assert.equal(proj30.dimensions.dinheiroLivreProjetado, 2600);
+
+    // 2. Consulta para data alvo + projeção mensal de 12m/24m/36m
+    const q12Nov = queryFreeMoneyAtDate({
+      targetDateISO: '2026-11-12',
+      startDateISO: '2026-11-01',
+      bankAccounts,
+      incomes,
+      transactions: [],
+      installments: [inst],
+      recurringItems,
+      cards: [card],
+      goals,
+    });
+    // Até 12/11: 2000 + 4000 (dia 5) - 2500 (dia 10) = 3500 (fatura 400 é dia 15, reserva 500 é dia 30)
+    assert.equal(q12Nov.dinheiroLivreProjetado, 3500);
+
+    const proj36m = computeFreeMoneyProjection({
+      mode: 'monthly',
+      count: 36,
+      startDateISO: '2026-11-01',
+      bankAccounts,
+      incomes,
+      transactions: [],
+      installments: [inst],
+      recurringItems,
+      cards: [card],
+      goals,
+    });
+    assert.equal(proj36m.monthlyPoints.length, 36);
+    assert.ok(proj36m.monthlyPoints[0].origins.incomes.length > 0);
+    assert.ok(proj36m.monthlyPoints[0].origins.cardInvoices.length > 0);
+
+    // 3. Testar todos os 6 cenários determinísticos
+    const scenarios: HorizonScenarioRule[] = [
+      {
+        id: 'sc-delay',
+        type: 'alteracao_data_recebimento',
+        title: 'Salário atrasado para dia 20',
+        enabled: true,
+        amount: 0,
+        startMonthKey: '2026-11',
+        targetIncomeId: 'inc-sal',
+        newReceiptDay: 20, // Aluguel dia 10 e fatura dia 15 caem ANTES do salário! 2000 - 2500 = -500 -> alerta negativo!
+      },
+      {
+        id: 'sc-cut',
+        type: 'perda_renda',
+        title: 'Corte 25% no salário',
+        enabled: true,
+        amount: 25,
+        usePercentage: true,
+        startMonthKey: '2026-11',
+        targetIncomeId: 'inc-sal',
+      },
+      {
+        id: 'sc-boost',
+        type: 'aumento_renda',
+        title: 'Bônus extra',
+        enabled: true,
+        amount: 500,
+        startMonthKey: '2026-11',
+        endMonthKey: '2026-11',
+        dayOfMonth: 25,
+      },
+      {
+        id: 'sc-exp',
+        type: 'nova_despesa',
+        title: 'Seguro extra',
+        enabled: true,
+        amount: 200,
+        isRecurringExpense: true,
+        startMonthKey: '2026-11',
+        dayOfMonth: 18,
+      },
+      {
+        id: 'sc-parc',
+        type: 'compra_parcelada',
+        title: 'Bicicleta 2x',
+        enabled: true,
+        amount: 600,
+        installmentsCount: 2,
+        startMonthKey: '2026-11',
+        dayOfMonth: 12,
+      },
+      {
+        id: 'sc-ant',
+        type: 'antecipacao_divida',
+        title: 'Quitar TV com desconto',
+        enabled: true,
+        amount: 950,
+        targetInstallmentId: 'inst-tv', // antecipa as 3 parcelas (1200) por 950 -> zera 400 na fatura de nov, dez, jan!
+        startMonthKey: '2026-11',
+        dayOfMonth: 2,
+      },
+    ];
+
+    const projScenarios = computeFreeMoneyProjection({
+      mode: 'daily',
+      count: 30,
+      startDateISO: '2026-11-01',
+      bankAccounts,
+      incomes,
+      transactions: [],
+      installments: [inst],
+      recurringItems,
+      cards: [card],
+      goals,
+      scenarioRules: scenarios,
+    });
+
+    // Como salário foi movido para dia 20 e houve antecipação dia 2 (950), o saldo entra em alerta negativo antes do dia 20!
+    assert.ok(projScenarios.negativeAlerts.length > 0);
+    // Receitas previstas: salário caiu 25% (4000 -> 3000) + 500 bônus = 3500
+    assert.equal(projScenarios.dimensions.receitasPrevistas, 3500);
+    // Faturas futuras da TV foram zeradas pela antecipação! (total faturas = 0)
+    assert.equal(projScenarios.dimensions.faturasFuturas, 0);
+    // Saldo final: 2000 + 3500 - (2500 aluguel + 200 seguro + 300 parc 1 bike + 950 antecipação) - 500 reserva = 1050
+    assert.equal(projScenarios.dimensions.dinheiroLivreProjetado, 1050);
+  });
+
+  it('excludes Transferência transactions from revenues and expenses across panel, balance, horizon and breakdown', () => {
+    const bankAccounts: BankAccount[] = [
+      { id: 'b1', name: 'Conta Principal', institution: 'Banco', type: 'Corrente', balance: 5000, currency: 'BRL', lastSyncedAt: '2026-11-01', active: true, ...audit },
+      { id: 'b2', name: 'Conta Reserva', institution: 'Banco', type: 'Poupança', balance: 1500, currency: 'BRL', lastSyncedAt: '2026-11-01', active: true, ...audit },
+    ];
+    const incomes: Income[] = [
+      { id: 'inc1', source: 'Salário', person: 'Ana', amount: 4000, frequency: 'Mensal', receiptDay: 5, receiptDate: '', active: true, notes: '', ...audit },
+    ];
+    const transactions: Transaction[] = [
+      {
+        id: 'tx-transf-pago',
+        date: '2026-11-10',
+        monthKey: '2026-11',
+        description: 'Transferência para reserva',
+        plannedAmount: 1200,
+        actualAmount: 1200,
+        type: 'Transferência',
+        category: 'Transferência',
+        person: 'Ana',
+        paymentMethod: 'Pix',
+        accountOrCard: 'Conta Principal',
+        cardId: '',
+        status: 'Pago',
+        dueDate: '',
+        notes: '',
+        ...audit,
+      },
+      {
+        id: 'tx-transf-pend',
+        date: '2026-11-14',
+        monthKey: '2026-11',
+        description: 'Transferência agendada entre contas',
+        plannedAmount: 800,
+        actualAmount: 800,
+        type: 'Transferência',
+        category: 'Transferência',
+        person: 'Ana',
+        paymentMethod: 'Pix',
+        accountOrCard: 'Conta Principal',
+        cardId: '',
+        status: 'Pendente',
+        dueDate: '',
+        notes: '',
+        ...audit,
+      },
+      {
+        id: 'tx-exp',
+        date: '2026-11-11',
+        monthKey: '2026-11',
+        description: 'Supermercado',
+        plannedAmount: 350,
+        actualAmount: 350,
+        type: 'Saída',
+        category: 'Alimentação',
+        person: 'Ana',
+        paymentMethod: 'Débito',
+        accountOrCard: 'Conta Principal',
+        cardId: '',
+        status: 'Pendente',
+        dueDate: '',
+        notes: '',
+        ...audit,
+      },
+      {
+        id: 'tx-inc',
+        date: '2026-11-12',
+        monthKey: '2026-11',
+        description: 'Reembolso',
+        plannedAmount: 250,
+        actualAmount: 250,
+        type: 'Entrada',
+        category: 'Outros',
+        person: 'Ana',
+        paymentMethod: 'Pix',
+        accountOrCard: 'Conta Principal',
+        cardId: '',
+        status: 'Pendente',
+        dueDate: '',
+        notes: '',
+        ...audit,
+      },
+    ];
+
+    const panel = computeMonthlyPanel(
+      ['2026-11'],
+      incomes,
+      transactions,
+      [],
+      [],
+      bankAccounts,
+      '2026-11-01',
+      []
+    )[0];
+
+    assert.equal(panel.extraEntries, 250);
+    assert.equal(panel.totalEntries, 4250);
+    assert.equal(panel.launchedExpenses, 350);
+    assert.equal(panel.totalExpenses, 350);
+
+    const breakdown = computeBalanceBreakdown({
+      monthKey: '2026-11',
+      todayISO: '2026-11-01',
+      bankAccounts,
+      incomes,
+      transactions,
+      installments: [],
+      recurringItems: [],
+      cards: [],
+    });
+    assert.equal(breakdown.saldoBancario, 6500);
+    assert.equal(breakdown.entradasPendentes, 4250);
+    assert.equal(breakdown.saldoComprometido, 350);
+
+    const horizon = computeShortHorizon({
+      daysCount: 30,
+      startDateISO: '2026-11-01',
+      bankAccounts,
+      incomes,
+      transactions,
+      installments: [],
+      recurringItems: [],
+      cards: [],
+      simulatedPurchases: [],
+    });
+    // Transferências (1200 paga e 800 pendente) não entram como receita nem despesa no horizonte
+    assert.equal(horizon.summary.totalEntries, 4250);
+    assert.equal(horizon.summary.totalExpenses, 350);
+
+    const freeMoney = computeFreeMoneyProjection({
+      mode: 'daily',
+      count: 30,
+      startDateISO: '2026-11-01',
+      bankAccounts,
+      incomes,
+      transactions,
+      installments: [],
+      recurringItems: [],
+      cards: [],
+      goals: [],
+    });
+    assert.equal(freeMoney.dimensions.receitasPrevistas, 4250);
+    assert.equal(freeMoney.dimensions.despesasPagas, 0);
+    assert.equal(freeMoney.dimensions.despesasPendentes, 350);
+
+    const memberBreakdown = computeMemberIncomeAndSpendingBreakdown({
+      household: {
+        id: 'h1',
+        name: 'Minhas Finanças',
+        ownerUid: 'u1',
+        memberUids: ['u1'],
+        partner1Uid: 'u1',
+        partner2Uid: '',
+        partner1Name: 'Ana',
+        partner2Name: 'Ana',
+        periodStart: '2026-01-01',
+        categories: ['Alimentação'],
+        paymentMethods: ['Pix'],
+        rooms: [],
+        accounts: ['Conta Principal'],
+        lastInviteCode: '',
+      },
+      incomes,
+      transactions,
+      installments: [],
+      recurringItems: [],
+      monthKey: '2026-11',
+    });
+    assert.equal(memberBreakdown.rows.length, 1);
+    assert.equal(memberBreakdown.rows[0].person, 'Ana');
+    assert.equal(memberBreakdown.rows[0].individualSpending, 350);
+    assert.equal(memberBreakdown.totalIncome, 4250);
+  });
+
+  it('returns only the single owner in getHouseholdPeople when household is individual', () => {
+    const individualHousehold: Household = {
+      id: 'h-ind',
+      name: 'Finanças Pessoais',
+      ownerUid: 'u1',
+      memberUids: ['u1'],
+      partner1Uid: 'u1',
+      partner2Uid: '',
+      partner1Name: 'Carlos',
+      partner2Name: 'Carlos',
+      periodStart: '2026-01-01',
+      categories: [],
+      paymentMethods: [],
+      rooms: [],
+      accounts: [],
+      lastInviteCode: '',
+    };
+    const people = getHouseholdPeople(individualHousehold);
+    assert.deepEqual(people, ['Carlos']);
+    assert.ok(!people.includes('Casal'));
+  });
+
+  it('computes compound interest, Brazilian IR brackets, IOF under 30 days, and Poupança rules accurately', () => {
+    assert.equal(computePoupancaAnnualPct(11.25, 0.85), Number((((Math.pow(1.005, 12) - 1) * 100) + 0.85).toFixed(2)));
+    assert.equal(computePoupancaAnnualPct(8.0, 0.5), 6.1);
+
+    assert.equal(getBrazilianIRRate(90, 'cdi'), 0.225);
+    assert.equal(getBrazilianIRRate(240, 'cdi'), 0.20);
+    assert.equal(getBrazilianIRRate(540, 'cdi'), 0.175);
+    assert.equal(getBrazilianIRRate(750, 'cdi'), 0.15);
+    assert.equal(getBrazilianIRRate(90, 'poupanca'), 0);
+
+    assert.equal(getBrazilianIOFRate(15, 'cdi'), 0.5);
+    assert.equal(getBrazilianIOFRate(30, 'cdi'), 0);
+    assert.equal(getBrazilianIOFRate(15, 'poupanca'), 0);
+
+    const cdi15d = simulateInvestmentGrowth({
+      initialAmount: 10000,
+      monthlyContribution: 0,
+      periodMode: 'days',
+      termMonths: 1,
+      durationDays: 15,
+      yieldType: 'cdi',
+      yieldIndicatorPct: 100,
+      indicators: DEFAULT_BENCHMARK_INDICATORS,
+    });
+    assert.equal(cdi15d.iofRate, 0.5);
+    assert.equal(cdi15d.irRate, 0.225);
+    assert.ok(cdi15d.grossInterest > 0);
+    assert.ok(cdi15d.iofTax > 0);
+    assert.ok(cdi15d.irTax > 0);
+    assert.ok(cdi15d.netBalance < cdi15d.grossBalance);
+
+    const poup15d = simulateInvestmentGrowth({
+      initialAmount: 10000,
+      monthlyContribution: 0,
+      periodMode: 'days',
+      termMonths: 1,
+      durationDays: 15,
+      yieldType: 'poupanca',
+      indicators: DEFAULT_BENCHMARK_INDICATORS,
+    });
+    assert.equal(poup15d.grossInterest, 0);
+    assert.equal(poup15d.netInterest, 0);
+    assert.equal(poup15d.iofTax, 0);
+    assert.equal(poup15d.irTax, 0);
+
+    const sim25m = simulateInvestmentGrowth({
+      initialAmount: 5000,
+      monthlyContribution: 500,
+      extraOneTimeAmount: 2000,
+      extraOneTimeMonth: 6,
+      periodMode: 'months',
+      termMonths: 25,
+      yieldType: 'cdi',
+      yieldIndicatorPct: 110,
+      indicators: {
+        ...DEFAULT_BENCHMARK_INDICATORS,
+        cdiAnnualPct: 10,
+      },
+    });
+    assert.equal(sim25m.totalInvested, 5000 + 25 * 500 + 2000);
+    assert.equal(sim25m.irRate, 0.15);
+    assert.equal(sim25m.iofTax, 0);
+    assert.equal(sim25m.timeline.length, 26);
+    assert.ok(sim25m.grossBalance > sim25m.totalInvested);
+    assert.ok(sim25m.netBalance > sim25m.totalInvested && sim25m.netBalance < sim25m.grossBalance);
+    assert.ok(sim25m.hypotheses.length >= 3);
+    assert.ok(sim25m.disclaimer.includes('garantia'));
+
+    const comparison = compareInvestmentModalities({
+      initialAmount: 10000,
+      monthlyContribution: 400,
+      termMonths: 24,
+      cdiIndicatorPct: 100,
+      selicIndicatorPct: 100,
+      selicCustodyFeePct: 0.2,
+      indicators: DEFAULT_BENCHMARK_INDICATORS,
+    });
+    assert.equal(comparison.length, 3);
+    const cdiRow = comparison.find((r) => r.yieldType === 'cdi')!;
+    const poupRow = comparison.find((r) => r.yieldType === 'poupanca')!;
+    const selicRow = comparison.find((r) => r.yieldType === 'selic')!;
+    assert.equal(poupRow.irExempt, true);
+    assert.equal(poupRow.taxesAndFees, 0);
+    assert.equal(cdiRow.irExempt, false);
+    assert.ok(cdiRow.taxesAndFees > 0);
+    assert.ok(selicRow.taxesAndFees > 0);
+    assert.ok(cdiRow.netBalance > poupRow.netBalance);
+    assert.equal(
+      Number(resolveInvestmentAnnualRatePct({ yieldType: 'cdi', yieldIndicatorPct: 120, indicators: { ...DEFAULT_BENCHMARK_INDICATORS, cdiAnnualPct: 10 } }).toFixed(2)),
+      12
+    );
+  });
+
+  it('computes Goal yield projections using yieldType, indicator percentage and termMonths', () => {
+    const goal: Goal = {
+      id: 'g-cdi',
+      name: 'Reserva de Emergência',
+      objective: '6 meses de custo de vida',
+      initialAmount: 10000,
+      targetAmount: 30000,
+      currentAmount: 10000,
+      monthlyContribution: 1000,
+      annualYieldRate: 0.11,
+      yieldType: 'cdi',
+      yieldIndicatorPct: 110,
+      termMonths: 24,
+      custodyFeePct: 0,
+      notes: '',
+      ...audit,
+    };
+
+    const proj = computeGoalProjection(goal, '2026-11', {
+      ...DEFAULT_BENCHMARK_INDICATORS,
+      cdiAnnualPct: 10,
+    });
+    assert.equal(Number((proj.effectiveAnnualYieldRate * 100).toFixed(2)), 11);
+    assert.equal(proj.termMonths, 24);
+    assert.ok(proj.termGrossBalance > 10000 + 24 * 1000);
+    assert.ok(proj.termNetBalance < proj.termGrossBalance);
+    assert.ok(proj.termEstimatedTaxes > 0);
+    assert.ok(proj.monthsToGoal !== null && proj.monthsToGoal > 0 && proj.monthsToGoal < 20);
+  });
+
+  it('computes PlannedPurchase deadlines, pace recommendations and portfolio summary without double-counting', () => {
+    const linkedGoal: Goal = {
+      id: 'g-car',
+      name: 'Caixinha do Carro',
+      targetAmount: 60000,
+      currentAmount: 15000,
+      monthlyContribution: 1500,
+      annualYieldRate: 0.11,
+      yieldType: 'cdi',
+      yieldIndicatorPct: 100,
+      termMonths: 24,
+      notes: '',
+      ...audit,
+    };
+
+    const carProject: PlannedPurchase = {
+      id: 'p-car',
+      priority: 1,
+      room: 'Garagem',
+      projectCategory: 'Carro',
+      iconName: 'car',
+      product: 'Carro seminovo',
+      brandModel: 'Compacto',
+      specs: '1.0 Turbo',
+      quantity: 1,
+      estimatedUnitPrice: 45000,
+      hasActualPrice: false,
+      actualUnitPrice: 0,
+      status: 'Pendente',
+      targetDate: '2027-11-01',
+      purchaseDate: '',
+      paymentMethod: 'Pix',
+      notes: '',
+      savedAmount: 5000, // ignorado quando há linkedGoal ativo (15000 prevalece)
+      monthlyContribution: 2000,
+      linkedGoalId: 'g-car',
+      ...audit,
+    };
+
+    const phoneProject: PlannedPurchase = {
+      id: 'p-phone',
+      priority: 2,
+      room: 'Pessoal',
+      projectCategory: 'Celular',
+      iconName: 'smartphone',
+      product: 'Celular novo',
+      brandModel: 'Modelo Pro',
+      specs: '256GB',
+      quantity: 1,
+      estimatedUnitPrice: 6000,
+      hasActualPrice: false,
+      actualUnitPrice: 0,
+      status: 'Pendente',
+      targetDate: '2027-05-01',
+      purchaseDate: '',
+      paymentMethod: 'Pix',
+      notes: '',
+      savedAmount: 2000,
+      monthlyContribution: 500,
+      ...audit,
+    };
+
+    const metricsCar = computePlannedPurchaseMetrics(carProject, {
+      linkedGoal,
+      todayISO: '2026-11-01',
+    });
+    assert.equal(metricsCar.effectiveSavedAmount, 15000);
+    assert.equal(metricsCar.remainingAmount, 30000);
+    assert.equal(metricsCar.monthsToDeadline, 12);
+    assert.equal(metricsCar.recommendedMonthlyContribution, 2500);
+    assert.equal(metricsCar.projectedMonthsAtPlannedPace, 15);
+    assert.equal(metricsCar.isOnTrackForDeadline, false);
+
+    const metricsCarAccelerated = computePlannedPurchaseMetrics(carProject, {
+      linkedGoal,
+      todayISO: '2026-11-01',
+      overrideMonthlyContribution: 3000,
+    });
+    assert.equal(metricsCarAccelerated.projectedMonthsAtPlannedPace, 10);
+    assert.equal(metricsCarAccelerated.isOnTrackForDeadline, true);
+
+    const bankAccounts: BankAccount[] = [
+      { id: 'b1', name: 'Conta Corrente', institution: 'Banco', type: 'Corrente', balance: 5000, currency: 'BRL', lastSyncedAt: '2026-11-01', active: true, ...audit },
+    ];
+    const portfolio = computeProjectsPortfolioSummary({
+      plannedPurchases: [carProject, phoneProject],
+      goals: [linkedGoal],
+      bankAccounts,
+      todayISO: '2026-11-01',
+    });
+    assert.equal(portfolio.totalPatrimony, 20000);
+    assert.equal(portfolio.totalProjectsBudget, 51000);
+    assert.equal(portfolio.totalSavedForProjects, 17000);
+    assert.equal(portfolio.totalRemainingForProjects, 34000);
+    assert.equal(portfolio.totalMonthlyContributions, 2500);
+    assert.equal(portfolio.activeProjectsCount, 2);
+    assert.equal(portfolio.committedPatrimonyPct, 85);
+  });
+});

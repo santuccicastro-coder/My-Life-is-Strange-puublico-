@@ -274,14 +274,15 @@ export function HomePage({ onNavigate, onQuickAdd, onEditTransaction }: HomePage
         return {
           kind: 'card' as const,
           id: `card-${c.id}`,
-          title: `Fatura ${c.name}`,
+          title:
+            inv.status === 'Parcialmente paga' ? `Fatura ${c.name} (Restante)` : `Fatura ${c.name}`,
           category: 'Cartão',
           kindLabel: `Vence dia ${c.dueDay}`,
           dueDate: `${selectedMonth}-${dayStr}`,
-          amount: inv.total,
+          amount: inv.remainingAmount,
         };
       })
-      .filter((item) => item.amount > 0);
+      .filter((item) => item.amount > 0.005);
 
     return [...pendingTxs, ...projectedFixedBills, ...cardDueItems]
       .sort((a, b) => a.dueDate.localeCompare(b.dueDate))
@@ -543,6 +544,50 @@ export function HomePage({ onNavigate, onQuickAdd, onEditTransaction }: HomePage
                 </p>
                 <p className="text-[11px] text-slate-500">Ver patrimônio &rsaquo;</p>
               </button>
+            </div>
+
+            {/* Visão explícita dos 4 saldos: Bancário, Comprometido, Livre e Previsto */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+              <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 space-y-0.5">
+                <p className="text-[11px] font-medium text-slate-500">Saldo bancário</p>
+                <p
+                  className={`text-sm font-bold font-mono tabular-nums ${
+                    metrics.balances.saldoBancario >= 0 ? 'text-slate-900 dark:text-slate-100' : 'text-red-600'
+                  }`}
+                >
+                  {displayMoney(metrics.balances.saldoBancario)}
+                </p>
+                <p className="text-[10px] text-slate-500">Soma das contas ativas agora</p>
+              </div>
+              <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 space-y-0.5">
+                <p className="text-[11px] font-medium text-slate-500">Saldo comprometido</p>
+                <p className="text-sm font-bold font-mono tabular-nums text-amber-600">
+                  {displayMoney(metrics.balances.saldoComprometido)}
+                </p>
+                <p className="text-[10px] text-slate-500">Obrigações e faturas em aberto</p>
+              </div>
+              <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 space-y-0.5">
+                <p className="text-[11px] font-medium text-slate-500">Saldo livre</p>
+                <p
+                  className={`text-sm font-bold font-mono tabular-nums ${
+                    metrics.balances.saldoLivre >= 0 ? 'text-emerald-700' : 'text-red-600'
+                  }`}
+                >
+                  {displayMoney(metrics.balances.saldoLivre)}
+                </p>
+                <p className="text-[10px] text-slate-500">Disponível após compromissos</p>
+              </div>
+              <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 space-y-0.5">
+                <p className="text-[11px] font-medium text-slate-500">Saldo previsto</p>
+                <p
+                  className={`text-sm font-bold font-mono tabular-nums ${
+                    metrics.balances.saldoPrevisto >= 0 ? 'text-emerald-700' : 'text-red-600'
+                  }`}
+                >
+                  {displayMoney(metrics.balances.saldoPrevisto)}
+                </p>
+                <p className="text-[10px] text-slate-500">Fechamento estimado do mês</p>
+              </div>
             </div>
 
             <div className="border-t border-slate-100 dark:border-slate-800 pt-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">

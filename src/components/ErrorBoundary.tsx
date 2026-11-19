@@ -18,7 +18,7 @@ export class ErrorBoundary extends React.Component<{ children: React.ReactNode }
       const parsed = JSON.parse(error.message);
       if (parsed && parsed.error) {
         if (String(parsed.error).includes('permission-denied') || String(parsed.error).includes('insufficient permissions')) {
-          message = 'Sem permissão para acessar ou modificar este registro. Verifique se você está autenticado com a conta do casal.';
+          message = 'Sem permissão para acessar ou modificar este registro. Verifique se você está autenticado com a sua conta.';
         } else {
           message = parsed.error;
         }

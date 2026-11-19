@@ -100,7 +100,7 @@ export function ScenariosPage({ embedded = false }: { embedded?: boolean }) {
           <h1 className="text-2xl font-bold tracking-tight text-slate-900">Cenários Financeiros</h1>
         )}
         <p className="text-sm text-slate-500 mt-0.5">
-          Simule variações nos gastos e na renda do casal para avaliar o impacto na sobra mensal e na reserva em 12 meses.
+          Simule variações nos seus gastos e na renda para avaliar o impacto na sobra mensal e na reserva em 12 meses.
         </p>
       </div>
 

@@ -12,7 +12,13 @@ export default defineConfig(() => {
       tailwindcss(),
       VitePWA({
         registerType: 'autoUpdate',
-        includeAssets: ['apple-touch-icon.png', 'icon.svg'],
+        includeAssets: [
+          'apple-touch-icon.png',
+          'icon.svg',
+          'pwa-192x192.png',
+          'pwa-512x512.png',
+          'pwa-maskable-512x512.png',
+        ],
         manifest: {
           id: '/',
           name: 'DuoFin — Controle Financeiro do Casal',
@@ -28,19 +34,19 @@ export default defineConfig(() => {
           lang: 'pt-BR',
           icons: [
             {
-              src: 'pwa-192x192.png',
+              src: '/pwa-192x192.png',
               sizes: '192x192',
               type: 'image/png',
               purpose: 'any',
             },
             {
-              src: 'pwa-512x512.png',
+              src: '/pwa-512x512.png',
               sizes: '512x512',
               type: 'image/png',
               purpose: 'any',
             },
             {
-              src: 'pwa-maskable-512x512.png',
+              src: '/pwa-maskable-512x512.png',
               sizes: '512x512',
               type: 'image/png',
               purpose: 'maskable',
@@ -49,32 +55,91 @@ export default defineConfig(() => {
         },
         workbox: {
           cleanupOutdatedCaches: true,
-          globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+          skipWaiting: true,
+          clientsClaim: true,
+          globPatterns: ['**/*.{js,css,html,ico,png,svg,webp,woff,woff2,webmanifest}'],
           maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
-          navigateFallbackDenylist: [/^\/api\//],
+          navigateFallback: 'index.html',
+          navigateFallbackDenylist: [/^\/api\//, /^\/__\//],
           runtimeCaching: [
+            // 1. Offline-First (CacheFirst) para folhas de estilo do Google Fonts
             {
               urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
-              handler: 'StaleWhileRevalidate',
+              handler: 'CacheFirst',
               options: {
-                cacheName: 'google-fonts-stylesheets',
-                expiration: {maxEntries: 10, maxAgeSeconds: 60 * 60 * 24 * 30},
+                cacheName: 'duofin-google-fonts-stylesheets',
+                expiration: {
+                  maxEntries: 15,
+                  maxAgeSeconds: 60 * 60 * 24 * 365,
+                },
+                cacheableResponse: {
+                  statuses: [0, 200],
+                },
               },
             },
+            // 2. Offline-First (CacheFirst) para arquivos de fonte do Google Fonts
             {
               urlPattern: /^https:\/\/fonts\.gstatic\.com\/.*/i,
               handler: 'CacheFirst',
               options: {
-                cacheName: 'google-fonts-webfonts',
-                expiration: {maxEntries: 20, maxAgeSeconds: 60 * 60 * 24 * 365},
-                cacheableResponse: {statuses: [0, 200]},
+                cacheName: 'duofin-google-fonts-webfonts',
+                expiration: {
+                  maxEntries: 30,
+                  maxAgeSeconds: 60 * 60 * 24 * 365,
+                },
+                cacheableResponse: {
+                  statuses: [0, 200],
+                },
               },
+            },
+            // 3. Offline-First (CacheFirst) para chunks compilados, mídia e ícones estáticos
+            {
+              urlPattern: /\/(?:assets|src\/assets)\/.*\.(?:js|css|png|jpg|jpeg|svg|webp|woff2?)$/i,
+              handler: 'CacheFirst',
+              options: {
+                cacheName: 'duofin-static-assets',
+                expiration: {
+                  maxEntries: 120,
+                  maxAgeSeconds: 60 * 60 * 24 * 30,
+                },
+                cacheableResponse: {
+                  statuses: [0, 200],
+                },
+              },
+            },
+            {
+              urlPattern: /\.(?:png|jpg|jpeg|svg|webp|ico|woff2?)$/i,
+              handler: 'CacheFirst',
+              options: {
+                cacheName: 'duofin-media-cache',
+                expiration: {
+                  maxEntries: 80,
+                  maxAgeSeconds: 60 * 60 * 24 * 30,
+                },
+                cacheableResponse: {
+                  statuses: [0, 200],
+                },
+              },
+            },
+            // 4. Pass-through direto (NetworkOnly) para Firestore & Firebase Auth:
+            //    mantém canais Listen/Write intactos para que o IndexedDB nativo do Firestore
+            //    carregue dados offline e enfileire novos lançamentos sem interferência do SW.
+            {
+              urlPattern:
+                /^https:\/\/(?:firestore|identitytoolkit|securetoken|firebaseinstallations)\.googleapis\.com\/.*/i,
+              handler: 'NetworkOnly',
+            },
+            // 5. Pass-through para endpoints de API/IA do servidor DuoFin
+            {
+              urlPattern: /\/api\/.*/i,
+              handler: 'NetworkOnly',
             },
           ],
         },
         devOptions: {
-          enabled: false,
+          enabled: true,
           type: 'module',
+          navigateFallback: 'index.html',
         },
       }),
       // Copies src/assets into dist/ so root-relative URLs like

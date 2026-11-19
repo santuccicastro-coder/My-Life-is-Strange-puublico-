@@ -1,12 +1,16 @@
 import type {
   AiChatMode,
   BankAccountType,
+  CardLimitRule,
   GoalMovementType,
   IncomeFrequency,
+  InstallmentStatus,
+  InvestmentYieldType,
   PlannedPurchaseStatus,
   RecurringFrequency,
   RecurringType,
   ScenarioMode,
+  TransactionEntryKind,
   TransactionStatus,
   TransactionType,
 } from '../types/finance';
@@ -91,6 +95,8 @@ export function validateTransactionInput(input: {
   notes: string;
   recurringId?: string;
   recurringMonthKey?: string;
+  entryKind?: TransactionEntryKind;
+  refundTargetId?: string;
 }) {
   const description = sanitizeStr(input.description, 120);
   if (!description) throw new Error('Informe uma descrição para o lançamento.');
@@ -109,6 +115,10 @@ export function validateTransactionInput(input: {
 
   const recurringId = sanitizeStr(input.recurringId ?? '', 128);
   const recurringMonthKey = sanitizeMonthKey(input.recurringMonthKey ?? '', false);
+  const allowedEntryKinds: TransactionEntryKind[] = ['padrao', 'pagamento_fatura', 'estorno'];
+  const entryKind =
+    input.entryKind && allowedEntryKinds.includes(input.entryKind) ? input.entryKind : undefined;
+  const refundTargetId = input.refundTargetId !== undefined ? sanitizeStr(input.refundTargetId, 128) : undefined;
 
   return {
     type: input.type,
@@ -127,6 +137,8 @@ export function validateTransactionInput(input: {
     notes: sanitizeStr(input.notes, 300),
     ...(recurringId ? { recurringId } : { recurringId: '' }),
     ...(recurringMonthKey ? { recurringMonthKey } : { recurringMonthKey: '' }),
+    ...(entryKind !== undefined ? { entryKind } : {}),
+    ...(refundTargetId !== undefined ? { refundTargetId } : {}),
   };
 }
 
@@ -219,12 +231,17 @@ export function validateCardInput(input: {
   dueDay: number;
   color: string;
   active: boolean;
+  limitRule?: CardLimitRule;
 }) {
   const name = sanitizeStr(input.name, 60);
   if (!name) throw new Error('Informe o nome do cartão.');
   const holder = sanitizeStr(input.holder, 50);
   if (!holder) throw new Error('Informe o titular do cartão.');
   const color = sanitizeStr(input.color, 20) || '#1E293B';
+  const limitRule: CardLimitRule | undefined =
+    input.limitRule === 'parcela_mensal' || input.limitRule === 'total_parcelamento'
+      ? input.limitRule
+      : undefined;
 
   return {
     name,
@@ -234,7 +251,25 @@ export function validateCardInput(input: {
     dueDay: sanitizeInt(input.dueDay, 1, 31, 17),
     color: color.length >= 4 ? color : '#1E293B',
     active: Boolean(input.active),
+    ...(limitRule !== undefined ? { limitRule } : {}),
   };
+}
+
+export function sanitizePaidInstallmentNumbers(
+  raw: unknown,
+  installmentsCount: number
+): number[] {
+  if (!Array.isArray(raw)) return [];
+  const maxCount = Math.max(1, Math.min(120, Math.round(installmentsCount)));
+  const unique = new Set<number>();
+  for (const item of raw) {
+    const num = Math.round(Number(item));
+    if (Number.isInteger(num) && num >= 1 && num <= maxCount) {
+      unique.add(num);
+    }
+    if (unique.size >= 120) break;
+  }
+  return Array.from(unique).sort((a, b) => a - b);
 }
 
 export function validateInstallmentInput(input: {
@@ -246,6 +281,11 @@ export function validateInstallmentInput(input: {
   totalAmount: number;
   installmentsCount: number;
   firstChargeDate: string;
+  paidInstallmentNumbers?: number[];
+  prepaidInstallmentNumbers?: number[];
+  cancelledInstallmentNumbers?: number[];
+  refundedAmount?: number;
+  status?: InstallmentStatus;
   notes: string;
 }) {
   const description = sanitizeStr(input.description, 120);
@@ -259,6 +299,23 @@ export function validateInstallmentInput(input: {
   if (totalAmount <= 0) throw new Error('O valor total deve ser maior que zero.');
   const installmentsCount = sanitizeInt(input.installmentsCount, 1, 120, 1);
   const firstChargeDate = sanitizeDate(input.firstChargeDate, true);
+  const paidInstallmentNumbers =
+    input.paidInstallmentNumbers !== undefined
+      ? sanitizePaidInstallmentNumbers(input.paidInstallmentNumbers, installmentsCount)
+      : undefined;
+  const prepaidInstallmentNumbers =
+    input.prepaidInstallmentNumbers !== undefined
+      ? sanitizePaidInstallmentNumbers(input.prepaidInstallmentNumbers, installmentsCount)
+      : undefined;
+  const cancelledInstallmentNumbers =
+    input.cancelledInstallmentNumbers !== undefined
+      ? sanitizePaidInstallmentNumbers(input.cancelledInstallmentNumbers, installmentsCount)
+      : undefined;
+  const refundedAmount =
+    input.refundedAmount !== undefined ? sanitizeNum(input.refundedAmount, 0, 100000000, 0) : undefined;
+  const allowedStatuses: InstallmentStatus[] = ['Ativo', 'Quitado', 'Cancelado'];
+  const status =
+    input.status && allowedStatuses.includes(input.status) ? input.status : undefined;
 
   return {
     description,
@@ -269,15 +326,26 @@ export function validateInstallmentInput(input: {
     totalAmount,
     installmentsCount,
     firstChargeDate,
+    ...(paidInstallmentNumbers !== undefined ? { paidInstallmentNumbers } : {}),
+    ...(prepaidInstallmentNumbers !== undefined ? { prepaidInstallmentNumbers } : {}),
+    ...(cancelledInstallmentNumbers !== undefined ? { cancelledInstallmentNumbers } : {}),
+    ...(refundedAmount !== undefined ? { refundedAmount } : {}),
+    ...(status !== undefined ? { status } : {}),
     notes: sanitizeStr(input.notes, 300),
   };
 }
 
 export function validateGoalInput(input: {
   name: string;
+  objective?: string;
+  initialAmount?: number;
   targetAmount: number;
   currentAmount: number;
   monthlyContribution: number;
+  termMonths?: number;
+  yieldType?: InvestmentYieldType;
+  yieldIndicatorPct?: number;
+  custodyFeePct?: number;
   annualYieldRate: number;
   notes: string;
 }) {
@@ -286,11 +354,38 @@ export function validateGoalInput(input: {
   const targetAmount = sanitizeNum(input.targetAmount, 0.01, 100000000, 0);
   if (targetAmount <= 0) throw new Error('A meta deve ser maior que zero.');
 
+  const objective = input.objective !== undefined ? sanitizeStr(input.objective, 160) : undefined;
+  const initialAmount =
+    input.initialAmount !== undefined && Number.isFinite(Number(input.initialAmount))
+      ? sanitizeNum(input.initialAmount, 0, 100000000, 0)
+      : undefined;
+  const termMonths =
+    input.termMonths !== undefined && Number.isFinite(Number(input.termMonths))
+      ? sanitizeInt(input.termMonths, 1, 600, 12)
+      : undefined;
+  const allowedYieldTypes: InvestmentYieldType[] = ['cdi', 'poupanca', 'selic', 'personalizado'];
+  const yieldType =
+    input.yieldType && allowedYieldTypes.includes(input.yieldType) ? input.yieldType : undefined;
+  const yieldIndicatorPct =
+    input.yieldIndicatorPct !== undefined && Number.isFinite(Number(input.yieldIndicatorPct))
+      ? sanitizeNum(input.yieldIndicatorPct, 0, 1000, 100)
+      : undefined;
+  const custodyFeePct =
+    input.custodyFeePct !== undefined && Number.isFinite(Number(input.custodyFeePct))
+      ? sanitizeNum(input.custodyFeePct, 0, 20, 0)
+      : undefined;
+
   return {
     name,
+    ...(objective !== undefined ? { objective } : {}),
+    ...(initialAmount !== undefined ? { initialAmount } : {}),
     targetAmount,
     currentAmount: sanitizeNum(input.currentAmount, 0, 100000000, 0),
     monthlyContribution: sanitizeNum(input.monthlyContribution, 0, 100000000, 0),
+    ...(termMonths !== undefined ? { termMonths } : {}),
+    ...(yieldType !== undefined ? { yieldType } : {}),
+    ...(yieldIndicatorPct !== undefined ? { yieldIndicatorPct } : {}),
+    ...(custodyFeePct !== undefined ? { custodyFeePct } : {}),
     annualYieldRate: Math.min(5, Math.max(0, Number(input.annualYieldRate) || 0)),
     notes: sanitizeStr(input.notes, 300),
   };
@@ -328,6 +423,8 @@ export function validateGoalMovementInput(input: {
 export function validatePlannedPurchaseInput(input: {
   priority: number;
   room: string;
+  projectCategory?: string;
+  iconName?: string;
   product: string;
   brandModel: string;
   specs: string;
@@ -335,6 +432,9 @@ export function validatePlannedPurchaseInput(input: {
   estimatedUnitPrice: number;
   actualUnitPrice: number;
   hasActualPrice: boolean;
+  savedAmount?: number;
+  monthlyContribution?: number;
+  linkedGoalId?: string;
   targetDate: string;
   purchaseDate: string;
   paymentMethod: string;
@@ -342,13 +442,28 @@ export function validatePlannedPurchaseInput(input: {
   notes: string;
 }) {
   const product = sanitizeStr(input.product, 100);
-  if (!product) throw new Error('Informe o nome do produto.');
-  const room = sanitizeStr(input.room, 50);
-  if (!room) throw new Error('Selecione o ambiente/categoria.');
+  if (!product) throw new Error('Informe o nome do produto ou projeto.');
+  const room = sanitizeStr(input.room, 50) || sanitizeStr(input.projectCategory, 50) || 'Outros';
+
+  const projectCategory =
+    input.projectCategory !== undefined ? sanitizeStr(input.projectCategory, 50) : undefined;
+  const iconName = input.iconName !== undefined ? sanitizeStr(input.iconName, 40) : undefined;
+  const savedAmount =
+    input.savedAmount !== undefined && Number.isFinite(Number(input.savedAmount))
+      ? sanitizeNum(input.savedAmount, 0, 100000000, 0)
+      : undefined;
+  const monthlyContribution =
+    input.monthlyContribution !== undefined && Number.isFinite(Number(input.monthlyContribution))
+      ? sanitizeNum(input.monthlyContribution, 0, 100000000, 0)
+      : undefined;
+  const linkedGoalId =
+    input.linkedGoalId !== undefined ? sanitizeStr(input.linkedGoalId, 128) : undefined;
 
   return {
     priority: sanitizeInt(input.priority, 0, 10, 5),
     room,
+    ...(projectCategory !== undefined ? { projectCategory } : {}),
+    ...(iconName !== undefined ? { iconName } : {}),
     product,
     brandModel: sanitizeStr(input.brandModel, 100),
     specs: sanitizeStr(input.specs, 200),
@@ -356,6 +471,9 @@ export function validatePlannedPurchaseInput(input: {
     estimatedUnitPrice: sanitizeNum(input.estimatedUnitPrice, 0, 100000000, 0),
     actualUnitPrice: input.hasActualPrice ? sanitizeNum(input.actualUnitPrice, 0, 100000000, 0) : 0,
     hasActualPrice: Boolean(input.hasActualPrice),
+    ...(savedAmount !== undefined ? { savedAmount } : {}),
+    ...(monthlyContribution !== undefined ? { monthlyContribution } : {}),
+    ...(linkedGoalId !== undefined ? { linkedGoalId } : {}),
     targetDate: sanitizeDate(input.targetDate, false),
     purchaseDate: sanitizeDate(input.purchaseDate, false),
     paymentMethod: sanitizeStr(input.paymentMethod, 40),

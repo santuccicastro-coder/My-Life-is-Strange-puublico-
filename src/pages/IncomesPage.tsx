@@ -267,7 +267,10 @@ export function IncomesPage() {
             amount: num,
             frequency,
             receiptDay: Number(receiptDay) || 5,
-            receiptDate: frequency === 'Única' || frequency === 'Anual' ? receiptDate : '',
+            receiptDate:
+              frequency === 'Única' || frequency === 'Anual' || frequency === 'Quinzenal' || frequency === 'Semanal'
+                ? receiptDate
+                : '',
             active,
             notes,
           },
@@ -289,9 +292,9 @@ export function IncomesPage() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">Renda e Contribuição</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900">Fontes de Renda</h1>
           <p className="text-sm text-slate-500 mt-0.5">
-            Salários, extras, % de contribuição de cada pessoa na renda e quanto cada um está gastando no mês.
+            Salários, ganhos fixos, receitas extras e projeção líquida no mês.
           </p>
         </div>
 
@@ -350,7 +353,7 @@ export function IncomesPage() {
             {formatBRL(netMonthBalance)}
           </p>
           <p className="text-xs text-slate-500">
-            {household.memberUids.length}/7 pessoa(s) conectada(s) na nuvem
+            Projeção mensal consolidada
           </p>
         </div>
       </section>
@@ -367,7 +370,7 @@ export function IncomesPage() {
         </div>
       )}
 
-      {/* % de Contribuição na Renda e Gasto Individual por Pessoa */}
+      {individualRows.length > 1 && (
       <section className="bg-white border border-slate-200 rounded-xl p-5 space-y-5">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div className="flex items-center gap-2">
@@ -377,7 +380,7 @@ export function IncomesPage() {
                 Contribuição na renda (%) e gasto individual
               </h2>
               <p className="text-xs text-slate-500">
-                Participação de cada pessoa na renda total e quanto cada uma gastou individualmente em{' '}
+                Participação na renda total e quanto foi gasto em{' '}
                 {formatMonthFull(selectedMonth)}.
               </p>
             </div>
@@ -452,7 +455,7 @@ export function IncomesPage() {
 
         {chartData.length > 0 && (
           <div className="pt-2 border-t border-slate-100">
-            <p className="text-xs font-semibold text-slate-700 mb-2">Comparativo: Renda × Gasto por pessoa</p>
+            <p className="text-xs font-semibold text-slate-700 mb-2">Comparativo: Renda × Gasto</p>
             <div className="h-56 min-w-0 w-full duofin-chart-enter">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
@@ -475,6 +478,7 @@ export function IncomesPage() {
           </div>
         )}
       </section>
+      )}
 
       {/* Lista de Fontes de Renda (Rendas diretas + Contas Fixas positivas) */}
       <section className="bg-white border border-slate-200 rounded-xl overflow-hidden">
@@ -788,6 +792,19 @@ export function IncomesPage() {
                   </label>
                 </div>
               </div>
+              {!editingRecurring && (frequency === 'Quinzenal' || frequency === 'Semanal') && (
+                <div>
+                  <label className="block text-xs font-medium text-slate-700 mb-1">
+                    Data do 1º recebimento (opcional, calcula datas reais a cada {frequency === 'Semanal' ? '7 dias' : '14 dias'})
+                  </label>
+                  <input
+                    type="date"
+                    value={receiptDate}
+                    onChange={(e) => setReceiptDate(e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg"
+                  />
+                </div>
+              )}
               {editingRecurring && (
                 <div>
                   <label className="block text-xs font-medium text-slate-700 mb-1">Mês final (opcional)</label>

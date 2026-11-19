@@ -1,6 +1,6 @@
 /**
- * Security Rules Verification Suite ("Dirty Dozen" & Valid Workflows)
- * Run against Firebase Emulator Suite using @firebase/rules-unit-testing when emulator is available.
+ * Security Rules & Server Auth Verification Suite ("Dirty Dozen", Rules & API Security)
+ * Run via: npm run test:rules
  */
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
@@ -10,6 +10,7 @@ describe('Firestore Security Rules Static & Invariant Verification', () => {
   const rulesPath = fs.existsSync('firestore.rules') ? 'firestore.rules' : 'DRAFT_firestore.rules';
   const rules = fs.readFileSync(rulesPath, 'utf8');
   const blueprint = JSON.parse(fs.readFileSync('firebase-blueprint.json', 'utf8'));
+  const serverCode = fs.readFileSync('server.ts', 'utf8');
 
   it('uses rules_version 2 and global default-deny safety net', () => {
     assert.match(rules, /rules_version\s*=\s*'2'/);
@@ -35,6 +36,60 @@ describe('Firestore Security Rules Static & Invariant Verification', () => {
     assert.match(rules, /incoming\(\)\.updatedAt\s*==\s*request\.time/);
     assert.match(rules, /affectedKeys\(\)\.hasOnly/);
     assert.match(rules, /getAfter\(/);
+  });
+
+  it('validates individual paidInstallmentNumbers safely in Installment rules and blueprint', () => {
+    assert.ok(blueprint.entities?.Installment?.properties?.paidInstallmentNumbers);
+    assert.match(rules, /'paidInstallmentNumbers'/);
+    assert.match(rules, /data\.paidInstallmentNumbers is list/);
+    assert.match(rules, /data\.paidInstallmentNumbers\.size\(\) <= 120/);
+    assert.match(rules, /data\.paidInstallmentNumbers\[0\] <= data\.installmentsCount/);
+  });
+
+  it('validates Prompt 3 credit card, refund, anticipation, and status fields in rules and blueprint', () => {
+    assert.ok(blueprint.entities?.Transaction?.properties?.entryKind);
+    assert.ok(blueprint.entities?.Transaction?.properties?.refundTargetId);
+    assert.ok(blueprint.entities?.Card?.properties?.limitRule);
+    assert.ok(blueprint.entities?.Installment?.properties?.prepaidInstallmentNumbers);
+    assert.ok(blueprint.entities?.Installment?.properties?.cancelledInstallmentNumbers);
+    assert.ok(blueprint.entities?.Installment?.properties?.refundedAmount);
+    assert.ok(blueprint.entities?.Installment?.properties?.status);
+
+    assert.match(rules, /data\.entryKind in \['padrao', 'pagamento_fatura', 'estorno'\]/);
+    assert.match(rules, /data\.limitRule in \['total_parcelamento', 'parcela_mensal'\]/);
+    assert.match(rules, /'prepaidInstallmentNumbers'/);
+    assert.match(rules, /'cancelledInstallmentNumbers'/);
+    assert.match(rules, /data\.status in \['Ativo', 'Quitado', 'Cancelado'\]/);
+  });
+
+  it('validates Prompt 5 Goal yield fields, PlannedPurchase project fields, and /api/indicators auth', () => {
+    assert.ok(blueprint.entities?.Goal?.properties?.yieldType);
+    assert.ok(blueprint.entities?.Goal?.properties?.yieldIndicatorPct);
+    assert.ok(blueprint.entities?.Goal?.properties?.termMonths);
+    assert.ok(blueprint.entities?.Goal?.properties?.custodyFeePct);
+    assert.ok(blueprint.entities?.PlannedPurchase?.properties?.projectCategory);
+    assert.ok(blueprint.entities?.PlannedPurchase?.properties?.iconName);
+    assert.ok(blueprint.entities?.PlannedPurchase?.properties?.savedAmount);
+    assert.ok(blueprint.entities?.PlannedPurchase?.properties?.monthlyContribution);
+    assert.ok(blueprint.entities?.PlannedPurchase?.properties?.linkedGoalId);
+
+    assert.match(rules, /data\.yieldType in \['cdi', 'poupanca', 'selic', 'personalizado'\]/);
+    assert.match(rules, /'termMonths'/);
+    assert.match(rules, /'projectCategory'/);
+    assert.match(rules, /'linkedGoalId'/);
+    assert.match(serverCode, /createAuthAndRateLimitMiddleware\('indicators'/);
+  });
+
+  it('hardens server.ts endpoints and Live WebSocket with Firebase ID token verification and abuse protection', () => {
+    assert.match(serverCode, /verifyIdToken\(/);
+    assert.match(serverCode, /provider === 'anonymous'/);
+    assert.match(serverCode, /createAuthAndRateLimitMiddleware\('export-csv'/);
+    assert.match(serverCode, /createAuthAndRateLimitMiddleware\('ai-chat'/);
+    assert.match(serverCode, /createAuthAndRateLimitMiddleware\('ai-horizon'/);
+    assert.match(serverCode, /MAX_WS_PAYLOAD_BYTES/);
+    assert.match(serverCode, /MAX_WS_CONCURRENT_PER_USER/);
+    assert.match(serverCode, /WS_AUTH_TIMEOUT_MS/);
+    assert.match(serverCode, /sanitizeCsvFormulaPrefix/);
   });
 
   it('documents all 12 Dirty Dozen denial scenarios', () => {

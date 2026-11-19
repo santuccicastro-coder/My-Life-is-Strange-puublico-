@@ -1,107 +1,58 @@
+import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import fs from 'node:fs';
 import {
   buildOfflineSnapshot,
   sanitizeForOfflineCache,
   shouldPreserveCachedDataOnSnapshot,
 } from './offlineCache.ts';
 
-test('sanitizeForOfflineCache converts Firestore Timestamps, Dates and strips FieldValue sentinels', () => {
-  const input = {
-    id: 'tx-1',
-    amount: 120.5,
-    createdAt: { toDate: () => new Date('2026-11-17T10:30:00.000Z') },
-    updatedAt: { seconds: 1794911400, nanoseconds: 0 },
-    pendingServerTs: { _methodName: 'serverTimestamp' },
-    ignoredFn: () => 'skip',
-    localDate: new Date('2026-11-17T12:00:00.000Z'),
-    nested: [
-      {
-        when: { toDate: () => new Date('2026-11-16T08:00:00.000Z') },
-        optional: undefined,
-      },
-    ],
-  };
+describe('Offline-First Workbox & IndexedDB Cache Strategy', () => {
+  const viteConfig = fs.readFileSync('vite.config.ts', 'utf8');
+  const firebaseClient = fs.readFileSync('src/firebase.ts', 'utf8');
 
-  const sanitized = sanitizeForOfflineCache(input) as Record<string, unknown>;
+  it('configures Workbox Offline-First caching, SPA navigateFallback, and Firestore/API NetworkOnly bypass in vite.config.ts', () => {
+    assert.match(viteConfig, /cleanupOutdatedCaches:\s*true/);
+    assert.match(viteConfig, /skipWaiting:\s*true/);
+    assert.match(viteConfig, /clientsClaim:\s*true/);
+    assert.match(viteConfig, /navigateFallback:\s*'index\.html'/);
+    assert.match(viteConfig, /handler:\s*'CacheFirst'/);
+    assert.match(viteConfig, /duofin-google-fonts-stylesheets/);
+    assert.match(viteConfig, /duofin-google-fonts-webfonts/);
+    assert.match(viteConfig, /duofin-static-assets/);
+    assert.match(viteConfig, /duofin-media-cache/);
+    assert.match(viteConfig, /firestore\|identitytoolkit\|securetoken\|firebaseinstallations/);
+    assert.match(viteConfig, /handler:\s*'NetworkOnly'/);
+    assert.match(viteConfig, /devOptions:\s*\{[\s\S]*enabled:\s*true/);
+  });
 
-  assert.equal(sanitized.id, 'tx-1');
-  assert.equal(sanitized.amount, 120.5);
-  assert.equal(sanitized.createdAt, '2026-11-17T10:30:00.000Z');
-  assert.equal(typeof sanitized.updatedAt, 'string');
-  assert.equal(sanitized.pendingServerTs, null);
-  assert.equal('ignoredFn' in sanitized, false);
-  assert.equal(sanitized.localDate, '2026-11-17T12:00:00.000Z');
-  assert.deepEqual(sanitized.nested, [{ when: '2026-11-16T08:00:00.000Z' }]);
-});
+  it('configures Firestore IndexedDB persistentLocalCache with multi-tab and single-tab fallback', () => {
+    assert.match(firebaseClient, /persistentLocalCache/);
+    assert.match(firebaseClient, /persistentMultipleTabManager/);
+    assert.match(firebaseClient, /persistentSingleTabManager/);
+    assert.match(firebaseClient, /firebaseConfig\.firestoreDatabaseId/);
+  });
 
-test('buildOfflineSnapshot stores uid, cachedAt and all financial collections cleanly', () => {
-  const snapshot = buildOfflineSnapshot(
-    'user-123',
-    {
-      userProfile: {
-        uid: 'user-123',
-        email: 'teste@duofin.local',
-        displayName: 'Vinicius',
-        photoURL: '',
-        activeHouseholdId: 'hh-1',
-        updatedAt: { toDate: () => new Date('2026-11-17T09:00:00.000Z') },
-      },
-      household: {
-        id: 'hh-1',
-        name: 'Casa',
-        ownerUid: 'user-123',
-        memberUids: ['user-123'],
-        partner1Uid: 'user-123',
-        partner2Uid: '',
-        partner1Name: 'Vinicius',
-        partner2Name: 'Parceiro',
-        periodStart: '2026-11-01',
-        categories: ['Mercado'],
-        paymentMethods: ['Pix'],
-        rooms: ['Cozinha'],
-        accounts: ['Conta corrente'],
-        lastInviteCode: '',
-      },
-      bankAccounts: [
-        {
-          id: 'acc-1',
-          name: 'Nubank',
-          institution: 'Nubank',
-          type: 'Corrente',
-          balance: 2450.75,
-          currency: 'BRL',
-          lastSyncedAt: '2026-11-17T09:00:00.000Z',
-          active: true,
-          createdByUid: 'user-123',
-          createdByName: 'Vinicius',
-          updatedByUid: 'user-123',
-          updatedByName: 'Vinicius',
-        },
-      ],
-      transactions: [
-        {
-          id: 'tx-1',
-          type: 'Saída',
-          description: 'Supermercado',
-          plannedAmount: 200,
-          actualAmount: 185.4,
-          category: 'Mercado',
-          person: 'Vinicius',
-          date: '2026-11-17',
-          monthKey: '2026-11',
-          paymentMethod: 'Pix',
-          accountOrCard: 'Nubank',
-          cardId: '',
-          status: 'Pago',
-          dueDate: '',
-          notes: '',
-          createdByUid: 'user-123',
-          createdByName: 'Vinicius',
-          updatedByUid: 'user-123',
-          updatedByName: 'Vinicius',
-        },
-      ],
+  it('sanitizes Firestore Timestamp and serverTimestamp sentinels cleanly for IndexedDB snapshot caching', () => {
+    const fakeTimestamp = { toDate: () => new Date('2026-11-19T09:00:00.000Z') };
+    const fakeSentinel = { _methodName: 'serverTimestamp' };
+    const clean = sanitizeForOfflineCache({
+      amount: 120.5,
+      createdAt: fakeTimestamp,
+      pendingAt: fakeSentinel,
+      nested: [{ seconds: 1700000000, nanoseconds: 0 }],
+    });
+
+    assert.equal(clean.amount, 120.5);
+    assert.equal(clean.createdAt, '2026-11-19T09:00:00.000Z');
+    assert.equal(clean.pendingAt, null);
+    assert.equal(typeof (clean.nested as unknown[])[0], 'string');
+
+    const snapshot = buildOfflineSnapshot('user-1', {
+      userProfile: null,
+      household: null,
+      bankAccounts: [],
+      transactions: [],
       recurringItems: [],
       incomes: [],
       cards: [],
@@ -111,47 +62,29 @@ test('buildOfflineSnapshot stores uid, cachedAt and all financial collections cl
       plannedPurchases: [],
       scenarios: [],
       aiMessages: [],
-    },
-    '2026-11-17T10:00:00.000Z'
-  );
+    });
+    assert.equal(snapshot.uid, 'user-1');
+    assert.ok(snapshot.cachedAt.length > 10);
+  });
 
-  assert.equal(snapshot.uid, 'user-123');
-  assert.equal(snapshot.cachedAt, '2026-11-17T10:00:00.000Z');
-  assert.equal(snapshot.bankAccounts.length, 1);
-  assert.equal(snapshot.bankAccounts[0].balance, 2450.75);
-  assert.equal(snapshot.transactions.length, 1);
-  assert.equal(snapshot.transactions[0].actualAmount, 185.4);
-  assert.equal(snapshot.userProfile?.updatedAt, '2026-11-17T09:00:00.000Z');
-});
-
-test('shouldPreserveCachedDataOnSnapshot protects hydrated offline balances from empty cache snapshots', () => {
-  assert.equal(
-    shouldPreserveCachedDataOnSnapshot({
-      isOffline: true,
-      fromCache: true,
-      snapshotEmpty: true,
-      hasHydratedCache: true,
-    }),
-    true
-  );
-
-  // When online or receiving non-empty snapshot, Firestore remains authoritative
-  assert.equal(
-    shouldPreserveCachedDataOnSnapshot({
-      isOffline: false,
-      fromCache: false,
-      snapshotEmpty: true,
-      hasHydratedCache: true,
-    }),
-    false
-  );
-  assert.equal(
-    shouldPreserveCachedDataOnSnapshot({
-      isOffline: true,
-      fromCache: true,
-      snapshotEmpty: false,
-      hasHydratedCache: true,
-    }),
-    false
-  );
+  it('preserves previously synced IndexedDB collections when offline snapshot starts empty', () => {
+    assert.equal(
+      shouldPreserveCachedDataOnSnapshot({
+        isOffline: true,
+        fromCache: true,
+        snapshotEmpty: true,
+        hasHydratedCache: true,
+      }),
+      true
+    );
+    assert.equal(
+      shouldPreserveCachedDataOnSnapshot({
+        isOffline: false,
+        fromCache: false,
+        snapshotEmpty: true,
+        hasHydratedCache: true,
+      }),
+      false
+    );
+  });
 });

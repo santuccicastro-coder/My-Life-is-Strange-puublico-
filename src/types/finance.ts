@@ -113,6 +113,37 @@ export interface AuditFields {
   updatedAt?: unknown;
 }
 
+export type TransactionEntryKind = 'padrao' | 'pagamento_fatura' | 'estorno';
+export type CardLimitRule = 'total_parcelamento' | 'parcela_mensal';
+export type CardInvoiceStatus = 'Aberta' | 'Fechada' | 'Vencida' | 'Parcialmente paga' | 'Paga';
+export type InstallmentStatus = 'Ativo' | 'Quitado' | 'Cancelado';
+export type HorizonScenarioType =
+  | 'perda_renda'
+  | 'aumento_renda'
+  | 'nova_despesa'
+  | 'compra_parcelada'
+  | 'antecipacao_divida'
+  | 'alteracao_data_recebimento';
+
+export interface HorizonScenarioRule {
+  id: string;
+  type: HorizonScenarioType;
+  title: string;
+  enabled: boolean;
+  amount: number;
+  usePercentage?: boolean;
+  startMonthKey: string; // YYYY-MM
+  endMonthKey?: string; // YYYY-MM or ''
+  dayOfMonth?: number; // 1..31
+  installmentsCount?: number;
+  cardId?: string;
+  targetIncomeId?: string;
+  newReceiptDay?: number;
+  targetInstallmentId?: string;
+  anticipateCount?: number;
+  isRecurringExpense?: boolean;
+}
+
 export interface Transaction extends AuditFields {
   id: string;
   type: TransactionType;
@@ -131,6 +162,8 @@ export interface Transaction extends AuditFields {
   notes: string;
   recurringId?: string;
   recurringMonthKey?: string;
+  entryKind?: TransactionEntryKind;
+  refundTargetId?: string;
 }
 
 export interface RecurringItem extends AuditFields {
@@ -172,6 +205,7 @@ export interface CreditCard extends AuditFields {
   dueDay: number;
   color: string;
   active: boolean;
+  limitRule?: CardLimitRule;
 }
 
 export interface Installment extends AuditFields {
@@ -184,15 +218,101 @@ export interface Installment extends AuditFields {
   totalAmount: number;
   installmentsCount: number;
   firstChargeDate: string; // YYYY-MM-DD
+  paidInstallmentNumbers?: number[];
+  prepaidInstallmentNumbers?: number[];
+  cancelledInstallmentNumbers?: number[];
+  refundedAmount?: number;
+  status?: InstallmentStatus;
   notes: string;
+}
+
+export type InvestmentYieldType = 'cdi' | 'poupanca' | 'selic' | 'personalizado';
+
+export interface BenchmarkIndicators {
+  cdiAnnualPct: number;
+  selicAnnualPct: number;
+  poupancaAnnualPct: number;
+  trAnnualPct: number;
+  updatedAt: string; // ISO date or timestamp
+  source: 'bcb' | 'fallback' | 'manual';
+}
+
+export interface CompoundSimulationInput {
+  initialAmount: number;
+  monthlyContribution: number;
+  extraOneTimeAmount?: number;
+  extraOneTimeMonth?: number;
+  periodMode?: 'months' | 'days';
+  termMonths: number;
+  durationDays?: number; // 1..29 when periodMode === 'days'
+  yieldType: InvestmentYieldType;
+  yieldIndicatorPct?: number; // e.g., 100 for 100% CDI/Selic
+  customAnnualRatePct?: number; // used when yieldType === 'personalizado'
+  custodyFeePct?: number; // e.g., 0.20% a.a.
+  indicators?: BenchmarkIndicators;
+}
+
+export interface CompoundSimulationMonthPoint {
+  month: number;
+  label: string;
+  investedTotal: number;
+  grossBalance: number;
+  netBalance: number;
+  grossInterestAccumulated: number;
+  netInterestAccumulated: number;
+}
+
+export interface CompoundSimulationResult {
+  yieldType: InvestmentYieldType;
+  yieldLabel: string;
+  durationDays: number;
+  termMonths: number;
+  totalInvested: number;
+  grossAnnualRatePct: number;
+  grossMonthlyRatePct: number;
+  netAnnualRatePct: number;
+  netMonthlyRatePct: number;
+  grossInterest: number;
+  grossBalance: number;
+  irRate: number;
+  irTax: number;
+  iofRate: number;
+  iofTax: number;
+  custodyFeeTotal: number;
+  netInterest: number;
+  netBalance: number;
+  timeline: CompoundSimulationMonthPoint[];
+  hypotheses: string[];
+  disclaimer: string;
+}
+
+export interface InvestmentModalityComparisonRow {
+  yieldType: InvestmentYieldType;
+  label: string;
+  indicatorSummary: string;
+  grossAnnualRatePct: number;
+  netAnnualRatePct: number;
+  totalInvested: number;
+  grossBalance: number;
+  grossInterest: number;
+  taxesAndFees: number;
+  netInterest: number;
+  netBalance: number;
+  irExempt: boolean;
 }
 
 export interface Goal extends AuditFields {
   id: string;
   name: string;
+  objective?: string;
+  initialAmount?: number;
   targetAmount: number;
   currentAmount: number;
   monthlyContribution: number;
+  termMonths?: number;
+  yieldType?: InvestmentYieldType;
+  yieldIndicatorPct?: number;
+  custodyFeePct?: number;
   annualYieldRate: number; // e.g., 0.105 for 10.5%
   notes: string;
 }
@@ -215,6 +335,8 @@ export interface PlannedPurchase extends AuditFields {
   id: string;
   priority: number; // 0..10
   room: string;
+  projectCategory?: string;
+  iconName?: string;
   product: string;
   brandModel: string;
   specs: string;
@@ -222,6 +344,9 @@ export interface PlannedPurchase extends AuditFields {
   estimatedUnitPrice: number;
   actualUnitPrice: number;
   hasActualPrice: boolean;
+  savedAmount?: number;
+  monthlyContribution?: number;
+  linkedGoalId?: string;
   targetDate: string; // YYYY-MM-DD or ''
   purchaseDate: string; // YYYY-MM-DD or ''
   paymentMethod: string;

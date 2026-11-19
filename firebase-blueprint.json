@@ -92,6 +92,8 @@
         "notes": { "type": "string", "maxLength": 300 },
         "recurringId": { "type": "string", "maxLength": 128 },
         "recurringMonthKey": { "type": "string", "maxLength": 7 },
+        "entryKind": { "type": "string", "enum": ["padrao", "pagamento_fatura", "estorno"] },
+        "refundTargetId": { "type": "string", "maxLength": 128 },
         "createdByUid": { "type": "string", "minLength": 1, "maxLength": 128 },
         "createdByName": { "type": "string", "minLength": 1, "maxLength": 80 },
         "updatedByUid": { "type": "string", "minLength": 1, "maxLength": 128 },
@@ -171,6 +173,7 @@
         "dueDay": { "type": "integer" },
         "color": { "type": "string", "minLength": 4, "maxLength": 20 },
         "active": { "type": "boolean" },
+        "limitRule": { "type": "string", "enum": ["total_parcelamento", "parcela_mensal"] },
         "createdByUid": { "type": "string", "minLength": 1, "maxLength": 128 },
         "createdByName": { "type": "string", "minLength": 1, "maxLength": 80 },
         "updatedByUid": { "type": "string", "minLength": 1, "maxLength": 128 },
@@ -207,6 +210,20 @@
         "totalAmount": { "type": "number" },
         "installmentsCount": { "type": "integer" },
         "firstChargeDate": { "type": "string", "minLength": 10, "maxLength": 10, "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "paidInstallmentNumbers": {
+          "type": "array",
+          "description": "Lista opcional de números das parcelas pagas individualmente (1..120)."
+        },
+        "prepaidInstallmentNumbers": {
+          "type": "array",
+          "description": "Lista opcional de números das parcelas antecipadas/quitadas antes do vencimento."
+        },
+        "cancelledInstallmentNumbers": {
+          "type": "array",
+          "description": "Lista opcional de números das parcelas canceladas/estornadas."
+        },
+        "refundedAmount": { "type": "number" },
+        "status": { "type": "string", "enum": ["Ativo", "Quitado", "Cancelado"] },
         "notes": { "type": "string", "maxLength": 300 },
         "createdByUid": { "type": "string", "minLength": 1, "maxLength": 128 },
         "createdByName": { "type": "string", "minLength": 1, "maxLength": 80 },
@@ -239,9 +256,15 @@
       "type": "object",
       "properties": {
         "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "objective": { "type": "string", "maxLength": 160 },
+        "initialAmount": { "type": "number" },
         "targetAmount": { "type": "number" },
         "currentAmount": { "type": "number" },
         "monthlyContribution": { "type": "number" },
+        "termMonths": { "type": "integer" },
+        "yieldType": { "type": "string", "enum": ["cdi", "poupanca", "selic", "personalizado"] },
+        "yieldIndicatorPct": { "type": "number" },
+        "custodyFeePct": { "type": "number" },
         "annualYieldRate": { "type": "number" },
         "notes": { "type": "string", "maxLength": 300 },
         "createdByUid": { "type": "string", "minLength": 1, "maxLength": 128 },
@@ -297,11 +320,13 @@
     },
     "PlannedPurchase": {
       "title": "PlannedPurchase",
-      "description": "Item planejado de compra do casal com prioridade, orçamento e comparação de preço real.",
+      "description": "Projeto e compra futura com prioridade, ícone, orçamento, valor reservado e meta mensal.",
       "type": "object",
       "properties": {
         "priority": { "type": "integer" },
         "room": { "type": "string", "minLength": 1, "maxLength": 50 },
+        "projectCategory": { "type": "string", "maxLength": 50 },
+        "iconName": { "type": "string", "maxLength": 40 },
         "product": { "type": "string", "minLength": 1, "maxLength": 100 },
         "brandModel": { "type": "string", "maxLength": 100 },
         "specs": { "type": "string", "maxLength": 200 },
@@ -309,6 +334,9 @@
         "estimatedUnitPrice": { "type": "number" },
         "actualUnitPrice": { "type": "number" },
         "hasActualPrice": { "type": "boolean" },
+        "savedAmount": { "type": "number" },
+        "monthlyContribution": { "type": "number" },
+        "linkedGoalId": { "type": "string", "maxLength": 128 },
         "targetDate": { "type": "string", "maxLength": 10 },
         "purchaseDate": { "type": "string", "maxLength": 10 },
         "paymentMethod": { "type": "string", "maxLength": 40 },

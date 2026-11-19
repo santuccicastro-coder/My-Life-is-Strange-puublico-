@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ArrowRight, Eye, EyeOff, KeyRound, Lock, ShieldCheck, UserPlus, Users } from 'lucide-react';
+import { ArrowRight, Eye, EyeOff, Lock, ShieldCheck, UserPlus } from 'lucide-react';
 import { useFinance } from '../context/AuthHouseholdContext';
 import { OfflineIndicator } from './OfflineIndicator';
 import { PWAInstallButton } from './PWAInstallButton';
@@ -15,7 +15,6 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
     registerWithCredentials,
     logout,
     createHousehold,
-    joinHouseholdWithCode,
     currentAuthorName,
     currentUsernameLabel,
   } = useFinance();
@@ -29,14 +28,10 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   const [authError, setAuthError] = useState('');
   const [signingIn, setSigningIn] = useState(false);
 
-  // Onboarding state
-  const [mode, setMode] = useState<'create' | 'join'>('create');
-  const [householdName, setHouseholdName] = useState('Finanças do Casal');
+  // Onboarding state (gerenciador individual)
+  const [householdName, setHouseholdName] = useState('Minhas Finanças');
   const [partner1Name, setPartner1Name] = useState('');
-  const [partner2Name, setPartner2Name] = useState('');
   const [periodStart, setPeriodStart] = useState(() => `${new Date().getFullYear()}-01-01`);
-  const [inviteCode, setInviteCode] = useState('');
-  const [myJoinName, setMyJoinName] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [onboardingError, setOnboardingError] = useState('');
 
@@ -88,7 +83,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
             DuoFin
           </span>
           <div className="flex items-center gap-3">
-            <span className="hidden sm:inline text-xs text-slate-500">Finanças compartilhadas na nuvem</span>
+            <span className="hidden sm:inline text-xs text-slate-500">Gerenciador financeiro pessoal na nuvem</span>
             <PWAInstallButton variant="header" />
           </div>
         </header>
@@ -96,10 +91,10 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
         <main className="duofin-page-enter max-w-5xl w-full mx-auto grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center my-auto py-8 sm:py-12">
           <div className="lg:col-span-6 space-y-6">
             <h1 className="text-3xl sm:text-5xl font-bold tracking-tight text-slate-900 leading-tight [text-wrap:balance]">
-              Seu diário financeiro compartilhado, pronto no celular todos os dias.
+              Seu gerenciador financeiro pessoal, pronto no celular todos os dias.
             </h1>
             <p className="text-base sm:text-lg text-slate-600 leading-relaxed max-w-xl">
-              Registrem despesas, receitas e contas fixas em segundos, acompanhem faturas futuras, parcelamentos e metas — tudo salvo no dispositivo mesmo offline e sincronizado na nuvem para até 7 pessoas.
+              Registre despesas, receitas, contas fixas, cartões, caixinhas de investimento e projetos futuros em segundos — salvo no dispositivo mesmo offline e sincronizado na sua nuvem individual.
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2 border-t border-slate-200">
               <div>
@@ -107,8 +102,8 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
                 <p className="text-xs text-slate-500 mt-1">Sessão contínua no aparelho, funcionando offline com sincronização automática.</p>
               </div>
               <div>
-                <p className="text-sm font-semibold text-slate-900">Nuvem para até 7 pessoas</p>
-                <p className="text-xs text-slate-500 mt-1">Vincule família ou parceiros com código único e acompanhe renda e gastos por pessoa.</p>
+                <p className="text-sm font-semibold text-slate-900">Patrimônio e projetos</p>
+                <p className="text-xs text-slate-500 mt-1">Acompanhe dinheiro livre, rendimento das caixinhas e metas de compra sem sair do foco.</p>
               </div>
               <div>
                 <p className="text-sm font-semibold text-slate-900">Google ou usuário</p>
@@ -154,8 +149,8 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
                 </h2>
                 <p className="text-sm text-slate-500">
                   {authTab === 'login'
-                    ? 'Entre com Google ou digite seu usuário e senha para abrir a nuvem compartilhada.'
-                    : 'Entre com Google ou crie seu usuário e senha para começar ou vincular um código.'}
+                    ? 'Entre com Google ou digite seu usuário e senha para abrir seu painel pessoal.'
+                    : 'Entre com Google ou crie seu usuário e senha para iniciar seu controle financeiro.'}
                 </p>
               </div>
 
@@ -298,28 +293,16 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
       e.preventDefault();
       setOnboardingError('');
       setSubmitting(true);
+      const resolvedName = (partner1Name || currentAuthorName || 'Titular').trim().slice(0, 50);
       try {
         await createHousehold({
           name: householdName,
-          partner1Name: partner1Name || currentAuthorName,
-          partner2Name: partner2Name || 'Parceiro(a)',
+          partner1Name: resolvedName,
+          partner2Name: resolvedName,
           periodStart,
         });
       } catch (err) {
-        setOnboardingError(err instanceof Error ? err.message : 'Erro ao criar espaço.');
-      } finally {
-        setSubmitting(false);
-      }
-    };
-
-    const handleJoin = async (e: React.FormEvent) => {
-      e.preventDefault();
-      setOnboardingError('');
-      setSubmitting(true);
-      try {
-        await joinHouseholdWithCode(inviteCode, myJoinName || currentAuthorName);
-      } catch (err) {
-        setOnboardingError(err instanceof Error ? err.message : 'Erro ao entrar com convite.');
+        setOnboardingError(err instanceof Error ? err.message : 'Erro ao configurar conta pessoal.');
       } finally {
         setSubmitting(false);
       }
@@ -341,39 +324,10 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
 
           <div className="bg-white border border-slate-200 rounded-xl p-5 sm:p-8 space-y-6">
             <div className="space-y-1">
-              <h1 className="text-xl font-bold text-slate-900">Configurar nuvem compartilhada</h1>
+              <h1 className="text-xl font-bold text-slate-900">Configurar espaço financeiro pessoal</h1>
               <p className="text-sm text-slate-500">
-                Crie um novo painel financeiro na nuvem (para você ou até 7 pessoas) ou entre usando um código de vínculo.
+                Defina como deseja identificar seu perfil financeiro e o mês inicial do planejamento.
               </p>
-            </div>
-
-            <div className="grid grid-cols-2 gap-1 p-1 bg-slate-100 rounded-lg">
-              <button
-                type="button"
-                onClick={() => {
-                  setMode('create');
-                  setOnboardingError('');
-                }}
-                className={`flex items-center justify-center gap-2 py-2 px-3 text-xs font-semibold rounded-md transition-colors cursor-pointer ${
-                  mode === 'create' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                <Users className="w-3.5 h-3.5" />
-                Criar nova nuvem
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setMode('join');
-                  setOnboardingError('');
-                }}
-                className={`flex items-center justify-center gap-2 py-2 px-3 text-xs font-semibold rounded-md transition-colors cursor-pointer ${
-                  mode === 'join' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                <KeyRound className="w-3.5 h-3.5" />
-                Vincular código
-              </button>
             </div>
 
             {onboardingError && (
@@ -382,107 +336,53 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
               </div>
             )}
 
-            {mode === 'create' ? (
-              <form key="create" onSubmit={handleCreate} className="duofin-tab-enter space-y-4">
-                <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1">Nome do espaço</label>
-                  <input
-                    type="text"
-                    required
-                    maxLength={80}
-                    value={householdName}
-                    onChange={(e) => setHouseholdName(e.target.value)}
-                    placeholder="Ex.: Finanças da Casa"
-                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-900"
-                  />
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-medium text-slate-700 mb-1">Seu nome (Pessoa 1)</label>
-                    <input
-                      type="text"
-                      required
-                      maxLength={50}
-                      value={partner1Name}
-                      onChange={(e) => setPartner1Name(e.target.value)}
-                      placeholder={currentAuthorName}
-                      className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-900"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-slate-700 mb-1">Nome do parceiro(a)</label>
-                    <input
-                      type="text"
-                      required
-                      maxLength={50}
-                      value={partner2Name}
-                      onChange={(e) => setPartner2Name(e.target.value)}
-                      placeholder="Ex.: Esposa / Marido"
-                      className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-900"
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1">Início do período anual</label>
-                  <input
-                    type="month"
-                    required
-                    value={periodStart.slice(0, 7)}
-                    onChange={(e) => setPeriodStart(`${e.target.value}-01`)}
-                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-900"
-                  />
-                  <p className="text-xs text-slate-400 mt-1">
-                    Define o mês inicial da janela de 12 meses no Painel e Parcelamentos. Você pode alterar depois.
-                  </p>
-                </div>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="w-full min-h-[44px] flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-900 text-white text-sm font-semibold rounded-lg hover:bg-slate-800 disabled:opacity-60 transition-colors cursor-pointer"
-                >
-                  {submitting ? 'Criando espaço...' : 'Criar espaço e começar'}
-                  <ArrowRight className="w-4 h-4" />
-                </button>
-              </form>
-            ) : (
-              <form key="join" onSubmit={handleJoin} className="duofin-tab-enter space-y-4">
-                <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1">Código de vínculo da nuvem</label>
-                  <input
-                    type="text"
-                    required
-                    maxLength={64}
-                    value={inviteCode}
-                    onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
-                    placeholder="Ex.: DUO-A7K9M2"
-                    className="w-full px-3 py-2 text-sm font-mono uppercase border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-900"
-                  />
-                  <p className="text-[11px] text-slate-500 mt-1">
-                    Até 7 pessoas podem compartilhar o mesmo armazenamento na nuvem usando códigos gerados em Configurações.
-                  </p>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1">Como você quer ser identificado(a)</label>
-                  <input
-                    type="text"
-                    required
-                    maxLength={50}
-                    value={myJoinName}
-                    onChange={(e) => setMyJoinName(e.target.value)}
-                    placeholder={currentAuthorName}
-                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-900"
-                  />
-                </div>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="w-full min-h-[44px] flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-900 text-white text-sm font-semibold rounded-lg hover:bg-slate-800 disabled:opacity-60 transition-colors cursor-pointer"
-                >
-                  {submitting ? 'Conectando...' : 'Entrar na nuvem compartilhada'}
-                  <ArrowRight className="w-4 h-4" />
-                </button>
-              </form>
-            )}
+            <form onSubmit={handleCreate} className="duofin-tab-enter space-y-4">
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">Nome do painel financeiro</label>
+                <input
+                  type="text"
+                  required
+                  maxLength={80}
+                  value={householdName}
+                  onChange={(e) => setHouseholdName(e.target.value)}
+                  placeholder="Ex.: Minhas Finanças"
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-900"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">Seu nome nos lançamentos</label>
+                <input
+                  type="text"
+                  required
+                  maxLength={50}
+                  value={partner1Name}
+                  onChange={(e) => setPartner1Name(e.target.value)}
+                  placeholder={currentAuthorName}
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-900"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">Início do período anual</label>
+                <input
+                  type="month"
+                  required
+                  value={periodStart.slice(0, 7)}
+                  onChange={(e) => setPeriodStart(`${e.target.value}-01`)}
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-900"
+                />
+                <p className="text-xs text-slate-400 mt-1">
+                  Define o mês inicial da janela de 12 meses no Painel e Parcelamentos. Você pode alterar depois.
+                </p>
+              </div>
+              <button
+                type="submit"
+                disabled={submitting}
+                className="w-full min-h-[44px] flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-900 text-white text-sm font-semibold rounded-lg hover:bg-slate-800 disabled:opacity-60 transition-colors cursor-pointer"
+              >
+                {submitting ? 'Preparando painel...' : 'Iniciar controle pessoal'}
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            </form>
           </div>
         </div>
       </div>

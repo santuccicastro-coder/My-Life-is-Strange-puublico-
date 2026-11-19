@@ -145,7 +145,7 @@ service cloud.firestore {
         && data.keys().hasOnly([
           'type', 'description', 'plannedAmount', 'actualAmount', 'category', 'person',
           'date', 'monthKey', 'paymentMethod', 'accountOrCard', 'cardId', 'status',
-          'dueDate', 'notes', 'recurringId', 'recurringMonthKey',
+          'dueDate', 'notes', 'recurringId', 'recurringMonthKey', 'entryKind', 'refundTargetId',
           'createdByUid', 'createdByName', 'updatedByUid', 'updatedByName',
           'createdAt', 'updatedAt'
         ])
@@ -165,6 +165,8 @@ service cloud.firestore {
         && data.notes is string && data.notes.size() <= 300
         && (!('recurringId' in data) || (data.recurringId is string && data.recurringId.size() <= 128))
         && (!('recurringMonthKey' in data) || isValidOptionalMonthKey(data.recurringMonthKey))
+        && (!('entryKind' in data) || (data.entryKind in ['padrao', 'pagamento_fatura', 'estorno']))
+        && (!('refundTargetId' in data) || (data.refundTargetId is string && data.refundTargetId.size() <= 128))
         && isValidAuditFields(data);
     }
 
@@ -228,7 +230,7 @@ service cloud.firestore {
           'createdByUid', 'createdByName', 'updatedByUid', 'updatedByName', 'createdAt', 'updatedAt'
         ])
         && data.keys().hasOnly([
-          'name', 'holder', 'limit', 'closingDay', 'dueDay', 'color', 'active',
+          'name', 'holder', 'limit', 'closingDay', 'dueDay', 'color', 'active', 'limitRule',
           'createdByUid', 'createdByName', 'updatedByUid', 'updatedByName', 'createdAt', 'updatedAt'
         ])
         && data.name is string && data.name.size() >= 1 && data.name.size() <= 60
@@ -238,6 +240,7 @@ service cloud.firestore {
         && data.dueDay is int && data.dueDay >= 1 && data.dueDay <= 31
         && data.color is string && data.color.size() >= 4 && data.color.size() <= 20
         && data.active is bool
+        && (!('limitRule' in data) || (data.limitRule in ['total_parcelamento', 'parcela_mensal']))
         && isValidAuditFields(data);
     }
 
@@ -249,7 +252,9 @@ service cloud.firestore {
         ])
         && data.keys().hasOnly([
           'description', 'cardId', 'cardName', 'person', 'category', 'totalAmount',
-          'installmentsCount', 'firstChargeDate', 'notes',
+          'installmentsCount', 'firstChargeDate', 'paidInstallmentNumbers',
+          'prepaidInstallmentNumbers', 'cancelledInstallmentNumbers', 'refundedAmount', 'status',
+          'notes',
           'createdByUid', 'createdByName', 'updatedByUid', 'updatedByName', 'createdAt', 'updatedAt'
         ])
         && data.description is string && data.description.size() >= 1 && data.description.size() <= 120
@@ -260,6 +265,35 @@ service cloud.firestore {
         && data.totalAmount is number && data.totalAmount > 0 && data.totalAmount <= 100000000
         && data.installmentsCount is int && data.installmentsCount >= 1 && data.installmentsCount <= 120
         && isValidDateStr(data.firstChargeDate)
+        && (!('paidInstallmentNumbers' in data) || (
+          data.paidInstallmentNumbers is list
+          && data.paidInstallmentNumbers.size() <= 120
+          && (data.paidInstallmentNumbers.size() == 0 || (
+            data.paidInstallmentNumbers[0] is int
+            && data.paidInstallmentNumbers[0] >= 1
+            && data.paidInstallmentNumbers[0] <= data.installmentsCount
+          ))
+        ))
+        && (!('prepaidInstallmentNumbers' in data) || (
+          data.prepaidInstallmentNumbers is list
+          && data.prepaidInstallmentNumbers.size() <= 120
+          && (data.prepaidInstallmentNumbers.size() == 0 || (
+            data.prepaidInstallmentNumbers[0] is int
+            && data.prepaidInstallmentNumbers[0] >= 1
+            && data.prepaidInstallmentNumbers[0] <= data.installmentsCount
+          ))
+        ))
+        && (!('cancelledInstallmentNumbers' in data) || (
+          data.cancelledInstallmentNumbers is list
+          && data.cancelledInstallmentNumbers.size() <= 120
+          && (data.cancelledInstallmentNumbers.size() == 0 || (
+            data.cancelledInstallmentNumbers[0] is int
+            && data.cancelledInstallmentNumbers[0] >= 1
+            && data.cancelledInstallmentNumbers[0] <= data.installmentsCount
+          ))
+        ))
+        && (!('refundedAmount' in data) || (data.refundedAmount is number && data.refundedAmount >= 0 && data.refundedAmount <= 100000000))
+        && (!('status' in data) || (data.status in ['Ativo', 'Quitado', 'Cancelado']))
         && data.notes is string && data.notes.size() <= 300
         && isValidAuditFields(data);
     }
@@ -270,13 +304,20 @@ service cloud.firestore {
           'createdByUid', 'createdByName', 'updatedByUid', 'updatedByName', 'createdAt', 'updatedAt'
         ])
         && data.keys().hasOnly([
-          'name', 'targetAmount', 'currentAmount', 'monthlyContribution', 'annualYieldRate', 'notes',
+          'name', 'objective', 'initialAmount', 'targetAmount', 'currentAmount', 'monthlyContribution',
+          'termMonths', 'yieldType', 'yieldIndicatorPct', 'custodyFeePct', 'annualYieldRate', 'notes',
           'createdByUid', 'createdByName', 'updatedByUid', 'updatedByName', 'createdAt', 'updatedAt'
         ])
         && data.name is string && data.name.size() >= 1 && data.name.size() <= 80
+        && (!('objective' in data) || (data.objective is string && data.objective.size() <= 160))
+        && (!('initialAmount' in data) || (data.initialAmount is number && data.initialAmount >= 0 && data.initialAmount <= 100000000))
         && data.targetAmount is number && data.targetAmount > 0 && data.targetAmount <= 100000000
         && data.currentAmount is number && data.currentAmount >= 0 && data.currentAmount <= 100000000
         && data.monthlyContribution is number && data.monthlyContribution >= 0 && data.monthlyContribution <= 100000000
+        && (!('termMonths' in data) || (data.termMonths is int && data.termMonths >= 1 && data.termMonths <= 600))
+        && (!('yieldType' in data) || (data.yieldType in ['cdi', 'poupanca', 'selic', 'personalizado']))
+        && (!('yieldIndicatorPct' in data) || (data.yieldIndicatorPct is number && data.yieldIndicatorPct >= 0 && data.yieldIndicatorPct <= 1000))
+        && (!('custodyFeePct' in data) || (data.custodyFeePct is number && data.custodyFeePct >= 0 && data.custodyFeePct <= 20))
         && data.annualYieldRate is number && data.annualYieldRate >= 0 && data.annualYieldRate <= 5
         && data.notes is string && data.notes.size() <= 300
         && isValidAuditFields(data);
@@ -311,13 +352,16 @@ service cloud.firestore {
           'createdByUid', 'createdByName', 'updatedByUid', 'updatedByName', 'createdAt', 'updatedAt'
         ])
         && data.keys().hasOnly([
-          'priority', 'room', 'product', 'brandModel', 'specs', 'quantity',
-          'estimatedUnitPrice', 'actualUnitPrice', 'hasActualPrice', 'targetDate',
-          'purchaseDate', 'paymentMethod', 'status', 'notes',
+          'priority', 'room', 'projectCategory', 'iconName', 'product', 'brandModel', 'specs', 'quantity',
+          'estimatedUnitPrice', 'actualUnitPrice', 'hasActualPrice',
+          'savedAmount', 'monthlyContribution', 'linkedGoalId',
+          'targetDate', 'purchaseDate', 'paymentMethod', 'status', 'notes',
           'createdByUid', 'createdByName', 'updatedByUid', 'updatedByName', 'createdAt', 'updatedAt'
         ])
         && data.priority is int && data.priority >= 0 && data.priority <= 10
         && data.room is string && data.room.size() >= 1 && data.room.size() <= 50
+        && (!('projectCategory' in data) || (data.projectCategory is string && data.projectCategory.size() <= 50))
+        && (!('iconName' in data) || (data.iconName is string && data.iconName.size() <= 40))
         && data.product is string && data.product.size() >= 1 && data.product.size() <= 100
         && data.brandModel is string && data.brandModel.size() <= 100
         && data.specs is string && data.specs.size() <= 200
@@ -325,6 +369,9 @@ service cloud.firestore {
         && data.estimatedUnitPrice is number && data.estimatedUnitPrice >= 0 && data.estimatedUnitPrice <= 100000000
         && data.actualUnitPrice is number && data.actualUnitPrice >= 0 && data.actualUnitPrice <= 100000000
         && data.hasActualPrice is bool
+        && (!('savedAmount' in data) || (data.savedAmount is number && data.savedAmount >= 0 && data.savedAmount <= 100000000))
+        && (!('monthlyContribution' in data) || (data.monthlyContribution is number && data.monthlyContribution >= 0 && data.monthlyContribution <= 100000000))
+        && (!('linkedGoalId' in data) || (data.linkedGoalId is string && data.linkedGoalId.size() <= 128))
         && isValidOptionalDateStr(data.targetDate)
         && isValidOptionalDateStr(data.purchaseDate)
         && data.paymentMethod is string && data.paymentMethod.size() <= 40
@@ -542,7 +589,7 @@ service cloud.firestore {
           && incoming().diff(existing()).affectedKeys().hasOnly([
             'type', 'description', 'plannedAmount', 'actualAmount', 'category', 'person',
             'date', 'monthKey', 'paymentMethod', 'accountOrCard', 'cardId', 'status',
-            'dueDate', 'notes', 'recurringId', 'recurringMonthKey',
+            'dueDate', 'notes', 'recurringId', 'recurringMonthKey', 'entryKind', 'refundTargetId',
             'updatedByUid', 'updatedByName', 'updatedAt'
           ]);
         allow delete: if isAuthenticatedUser() && isValidId(householdId) && isValidId(transactionId) && isHouseholdMember(householdId);
@@ -625,7 +672,7 @@ service cloud.firestore {
           && incoming().updatedAt == request.time
           && isHouseholdMember(householdId)
           && incoming().diff(existing()).affectedKeys().hasOnly([
-            'name', 'holder', 'limit', 'closingDay', 'dueDay', 'color', 'active',
+            'name', 'holder', 'limit', 'closingDay', 'dueDay', 'color', 'active', 'limitRule',
             'updatedByUid', 'updatedByName', 'updatedAt'
           ]);
         allow delete: if isAuthenticatedUser() && isValidId(householdId) && isValidId(cardId) && isHouseholdMember(householdId);
@@ -653,7 +700,9 @@ service cloud.firestore {
           && isHouseholdMember(householdId)
           && incoming().diff(existing()).affectedKeys().hasOnly([
             'description', 'cardId', 'cardName', 'person', 'category', 'totalAmount',
-            'installmentsCount', 'firstChargeDate', 'notes',
+            'installmentsCount', 'firstChargeDate', 'paidInstallmentNumbers',
+            'prepaidInstallmentNumbers', 'cancelledInstallmentNumbers', 'refundedAmount', 'status',
+            'notes',
             'updatedByUid', 'updatedByName', 'updatedAt'
           ]);
         allow delete: if isAuthenticatedUser() && isValidId(householdId) && isValidId(installmentId) && isHouseholdMember(householdId);
@@ -680,7 +729,8 @@ service cloud.firestore {
           && incoming().updatedAt == request.time
           && isHouseholdMember(householdId)
           && incoming().diff(existing()).affectedKeys().hasOnly([
-            'name', 'targetAmount', 'currentAmount', 'monthlyContribution', 'annualYieldRate', 'notes',
+            'name', 'objective', 'initialAmount', 'targetAmount', 'currentAmount', 'monthlyContribution',
+            'termMonths', 'yieldType', 'yieldIndicatorPct', 'custodyFeePct', 'annualYieldRate', 'notes',
             'updatedByUid', 'updatedByName', 'updatedAt'
           ]);
         allow delete: if isAuthenticatedUser() && isValidId(householdId) && isValidId(goalId) && isHouseholdMember(householdId);
@@ -722,9 +772,10 @@ service cloud.firestore {
           && incoming().updatedAt == request.time
           && isHouseholdMember(householdId)
           && incoming().diff(existing()).affectedKeys().hasOnly([
-            'priority', 'room', 'product', 'brandModel', 'specs', 'quantity',
-            'estimatedUnitPrice', 'actualUnitPrice', 'hasActualPrice', 'targetDate',
-            'purchaseDate', 'paymentMethod', 'status', 'notes',
+            'priority', 'room', 'projectCategory', 'iconName', 'product', 'brandModel', 'specs', 'quantity',
+            'estimatedUnitPrice', 'actualUnitPrice', 'hasActualPrice',
+            'savedAmount', 'monthlyContribution', 'linkedGoalId',
+            'targetDate', 'purchaseDate', 'paymentMethod', 'status', 'notes',
             'updatedByUid', 'updatedByName', 'updatedAt'
           ]);
         allow delete: if isAuthenticatedUser() && isValidId(householdId) && isValidId(purchaseId) && isHouseholdMember(householdId);

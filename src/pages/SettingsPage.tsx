@@ -1,17 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Check,
-  Cloud,
-  Copy,
-  KeyRound,
   Landmark,
   Moon,
   Plus,
   Smartphone,
   Sun,
   Trash2,
-  UserMinus,
-  Users,
   Wallet,
   X,
 } from 'lucide-react';
@@ -22,7 +16,6 @@ import { useTheme } from '../context/ThemeContext';
 import type { BankAccount, BankAccountType } from '../types/finance';
 import {
   formatBRL,
-  getHouseholdMembersList,
   parseSignedDecimal,
   sanitizeSignedDecimalInput,
 } from '../utils/financeCalculations';
@@ -31,12 +24,8 @@ export function SettingsPage() {
   const {
     user,
     household,
-    invites,
     bankAccounts,
     updateHouseholdSettings,
-    createInviteCode,
-    deleteInviteCode,
-    removeMember,
     saveBankAccount,
     deleteBankAccount,
   } = useFinance();
@@ -45,8 +34,6 @@ export function SettingsPage() {
 
   const [name, setName] = useState('');
   const [partner1Name, setPartner1Name] = useState('');
-  const [partner2Name, setPartner2Name] = useState('');
-  const [memberNamesDraft, setMemberNamesDraft] = useState<Record<string, string>>({});
   const [periodStart, setPeriodStart] = useState('');
   const [categoriesText, setCategoriesText] = useState('');
   const [paymentMethodsText, setPaymentMethodsText] = useState('');
@@ -56,9 +43,6 @@ export function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [savedMsg, setSavedMsg] = useState('');
   const [error, setError] = useState('');
-  const [creatingInvite, setCreatingInvite] = useState(false);
-  const [copiedCode, setCopiedCode] = useState('');
-  const [removingUid, setRemovingUid] = useState('');
 
   // Manual bank account form state
   const [accFormOpen, setAccFormOpen] = useState(false);
@@ -69,18 +53,11 @@ export function SettingsPage() {
   const [accBalance, setAccBalance] = useState('');
   const [accSaving, setAccSaving] = useState(false);
 
-  const membersList = useMemo(() => getHouseholdMembersList(household), [household]);
-
   useEffect(() => {
     if (!household) return;
     setName(household.name);
-    setPartner1Name(household.partner1Name);
-    setPartner2Name(household.partner2Name);
-    const nextMap: Record<string, string> = {};
-    for (const m of getHouseholdMembersList(household)) {
-      nextMap[m.uid] = m.name;
-    }
-    setMemberNamesDraft(nextMap);
+    const ownerName = household.memberNames?.[household.ownerUid] || household.partner1Name;
+    setPartner1Name(ownerName);
     setPeriodStart(household.periodStart);
     setCategoriesText(household.categories.join(', '));
     setPaymentMethodsText(household.paymentMethods.join(', '));
@@ -95,10 +72,6 @@ export function SettingsPage() {
 
   if (!household || !user) return null;
 
-  const isOwner = household.ownerUid === user.uid;
-  const maxMembers = 7;
-  const canInviteMore = household.memberUids.length < maxMembers;
-
   const splitCommaList = (txt: string) =>
     txt
       .split(',')
@@ -111,21 +84,16 @@ export function SettingsPage() {
     setSavedMsg('');
     setSaving(true);
     try {
-      const sanitizedMemberNames: Record<string, string> = {};
-      for (const uid of household.memberUids) {
-        const draft = memberNamesDraft[uid]?.trim();
-        if (draft) {
-          sanitizedMemberNames[uid] = draft.slice(0, 50);
-        }
-      }
-      const p1Resolved = sanitizedMemberNames[household.ownerUid] || partner1Name;
-      const secondUid = household.memberUids.find((u) => u !== household.ownerUid);
-      const p2Resolved = (secondUid && sanitizedMemberNames[secondUid]) || partner2Name;
+      const resolvedOwnerName = (partner1Name || household.partner1Name || 'Titular').trim().slice(0, 50);
+      const sanitizedMemberNames: Record<string, string> = {
+        ...(household.memberNames ?? {}),
+        [household.ownerUid]: resolvedOwnerName,
+      };
 
       await updateHouseholdSettings({
         name,
-        partner1Name: p1Resolved,
-        partner2Name: p2Resolved,
+        partner1Name: resolvedOwnerName,
+        partner2Name: resolvedOwnerName,
         memberNames: sanitizedMemberNames,
         periodStart,
         categories: splitCommaList(categoriesText),
@@ -139,36 +107,6 @@ export function SettingsPage() {
     } finally {
       setSaving(false);
     }
-  };
-
-  const handleGenerateInvite = async () => {
-    setError('');
-    setCreatingInvite(true);
-    try {
-      await createInviteCode();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erro ao gerar código de vínculo.');
-    } finally {
-      setCreatingInvite(false);
-    }
-  };
-
-  const handleRemoveMember = async (targetUid: string) => {
-    setError('');
-    setRemovingUid(targetUid);
-    try {
-      await removeMember(targetUid);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erro ao desvincular pessoa.');
-    } finally {
-      setRemovingUid('');
-    }
-  };
-
-  const copyCode = async (code: string) => {
-    await navigator.clipboard.writeText(code);
-    setCopiedCode(code);
-    setTimeout(() => setCopiedCode(''), 2500);
   };
 
   const openAccountForm = (acc?: BankAccount) => {
@@ -217,7 +155,7 @@ export function SettingsPage() {
       <div>
         <h1 className="text-2xl font-bold tracking-tight text-slate-900">Configurações</h1>
         <p className="text-sm text-slate-500 mt-0.5">
-          Tema escuro, nuvem compartilhada (até 7 pessoas), saldos das contas, aplicativo no celular e listas.
+          Tema escuro, saldos das contas, aplicativo no celular e listas pessoais.
         </p>
       </div>
 
@@ -286,129 +224,6 @@ export function SettingsPage() {
             </span>
           </div>
         </div>
-      </section>
-
-      {/* Nuvem Compartilhada (Até 7 Pessoas) */}
-      <section className="bg-white border border-slate-200 rounded-xl p-5 space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="flex items-start gap-2.5 min-w-0">
-            <Cloud className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <h2 className="text-base font-semibold text-slate-900">Nuvem Compartilhada e Código de Vínculo</h2>
-                <span className="px-2 py-0.5 text-[11px] font-semibold rounded border bg-emerald-50 text-emerald-700 border-emerald-200">
-                  {household.memberUids.length}/{maxMembers} pessoas
-                </span>
-              </div>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Vincule até 7 pessoas na mesma nuvem para sincronizar lançamentos, faturas e metas em tempo real, com cálculo de % de contribuição na renda e gasto individual.
-              </p>
-            </div>
-          </div>
-
-          {canInviteMore && (
-            <button
-              type="button"
-              disabled={creatingInvite}
-              onClick={handleGenerateInvite}
-              className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-slate-900 text-white text-xs font-semibold rounded-lg hover:bg-slate-800 disabled:opacity-60 cursor-pointer shrink-0 w-full sm:w-auto"
-            >
-              <KeyRound className="w-3.5 h-3.5" />
-              {creatingInvite ? 'Gerando...' : 'Gerar código de vínculo'}
-            </button>
-          )}
-        </div>
-
-        {/* Lista de pessoas conectadas na nuvem */}
-        <div className="space-y-2">
-          <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-700">
-            <Users className="w-3.5 h-3.5 text-slate-500" />
-            Pessoas conectadas neste armazenamento ({membersList.length})
-          </div>
-          <div className="divide-y divide-slate-100 border border-slate-200 rounded-lg">
-            {membersList.map((member) => {
-              const isSelf = member.uid === user.uid;
-              return (
-                <div
-                  key={member.uid}
-                  className="px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2"
-                >
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="text-sm font-semibold text-slate-900 truncate">{member.name}</p>
-                      {member.isOwner && (
-                        <span className="px-1.5 py-0.5 text-[10px] font-semibold bg-slate-100 text-slate-700 border border-slate-200 rounded">
-                          Administrador
-                        </span>
-                      )}
-                      {isSelf && (
-                        <span className="px-1.5 py-0.5 text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 rounded">
-                          Você
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-[11px] text-slate-500">
-                      Sincronizado na nuvem · ID {member.uid.slice(0, 8)}...
-                    </p>
-                  </div>
-
-                  {isOwner && !member.isOwner && (
-                    <button
-                      type="button"
-                      disabled={removingUid === member.uid}
-                      onClick={() => handleRemoveMember(member.uid)}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-red-700 bg-white border border-red-200 rounded-lg hover:bg-red-50 disabled:opacity-50 cursor-pointer shrink-0 self-start sm:self-center"
-                    >
-                      <UserMinus className="w-3.5 h-3.5" />
-                      {removingUid === member.uid ? 'Desvinculando...' : 'Desvincular'}
-                    </button>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Códigos de vínculo ativos */}
-        {canInviteMore && (
-          <div className="space-y-2.5 pt-2 border-t border-slate-100">
-            <p className="text-xs text-slate-600">
-              Envie um código de uso único para outra pessoa. Ao entrar com Google ou usuário e senha, ela escolhe{' '}
-              <strong>&ldquo;Vincular código&rdquo;</strong> e digita o código abaixo. Restam{' '}
-              <strong>{maxMembers - household.memberUids.length}</strong> vaga(s) na nuvem.
-            </p>
-            {invites.length > 0 && (
-              <div className="divide-y divide-slate-100 border border-slate-200 rounded-lg">
-                {invites.map((inv) => (
-                  <div key={inv.id} className="px-4 py-3 flex items-center justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-mono font-bold text-slate-900">{inv.id}</p>
-                      <p className="text-xs text-slate-500">Código ativo · uso único</p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => copyCode(inv.id)}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg cursor-pointer"
-                      >
-                        {copiedCode === inv.id ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                        {copiedCode === inv.id ? 'Copiado' : 'Copiar'}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => deleteInviteCode(inv.id)}
-                        aria-label={`Excluir código ${inv.id}`}
-                        className="p-1.5 text-slate-400 hover:text-red-600 cursor-pointer"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
       </section>
 
       {/* Contas Bancárias & Carteiras (Manuais) */}
@@ -536,20 +351,31 @@ export function SettingsPage() {
 
       {/* Formulário de Configurações */}
       <form onSubmit={handleSave} className="bg-white border border-slate-200 rounded-xl p-5 space-y-5">
-        <h2 className="text-base font-semibold text-slate-900">Nomes, período e listas</h2>
+        <h2 className="text-base font-semibold text-slate-900">Perfil, período e listas</h2>
 
         {error && <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700">{error}</div>}
         {savedMsg && <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-700">{savedMsg}</div>}
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div>
-            <label className="block text-xs font-medium text-slate-700 mb-1">Nome do espaço</label>
+            <label className="block text-xs font-medium text-slate-700 mb-1">Nome do painel</label>
             <input
               type="text"
               required
               maxLength={80}
               value={name}
               onChange={(e) => setName(e.target.value)}
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-700 mb-1">Seu nome nos lançamentos</label>
+            <input
+              type="text"
+              required
+              maxLength={50}
+              value={partner1Name}
+              onChange={(e) => setPartner1Name(e.target.value)}
               className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg"
             />
           </div>
@@ -562,46 +388,6 @@ export function SettingsPage() {
               onChange={(e) => setPeriodStart(`${e.target.value}-01`)}
               className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg"
             />
-          </div>
-        </div>
-
-        {/* Nomes das pessoas conectadas (1 a 7) */}
-        <div className="space-y-3 pt-2 border-t border-slate-100">
-          <p className="text-xs font-medium text-slate-700">Nomes das pessoas no espaço</p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {membersList.map((member, idx) => (
-              <div key={member.uid}>
-                <label className="block text-xs font-medium text-slate-600 mb-1">
-                  Pessoa {idx + 1} {member.isOwner ? '(Administrador)' : ''}
-                </label>
-                <input
-                  type="text"
-                  required
-                  maxLength={50}
-                  value={memberNamesDraft[member.uid] ?? member.name}
-                  onChange={(e) =>
-                    setMemberNamesDraft((prev) => ({
-                      ...prev,
-                      [member.uid]: e.target.value,
-                    }))
-                  }
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg"
-                />
-              </div>
-            ))}
-            {household.memberUids.length <= 1 && (
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Pessoa 2 (rótulo padrão)</label>
-                <input
-                  type="text"
-                  required
-                  maxLength={50}
-                  value={partner2Name}
-                  onChange={(e) => setPartner2Name(e.target.value)}
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg"
-                />
-              </div>
-            )}
           </div>
         </div>
 
@@ -635,7 +421,9 @@ export function SettingsPage() {
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-700 mb-1">Ambientes (Compras planejadas)</label>
+            <label className="block text-xs font-medium text-slate-700 mb-1">
+              Categorias / ambientes (Futuras Compras e Projetos)
+            </label>
             <input
               type="text"
               value={roomsText}

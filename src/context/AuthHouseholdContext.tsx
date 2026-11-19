@@ -14,6 +14,7 @@ import {
   collection,
   deleteDoc,
   doc,
+  enableNetwork,
   getDoc,
   getDocFromCache,
   onSnapshot,
@@ -22,6 +23,7 @@ import {
   serverTimestamp,
   setDoc,
   updateDoc,
+  waitForPendingWrites,
   where,
   writeBatch,
 } from 'firebase/firestore';
@@ -44,7 +46,12 @@ import type {
   TransactionStatus,
   UserProfile,
 } from '../types/finance';
-import { buildDateInMonth } from '../utils/financeCalculations';
+import {
+  buildDateInMonth,
+  computeInstallmentSummary,
+  getCardInvoiceInMonth,
+  getTodayISO,
+} from '../utils/financeCalculations';
 import {
   clearFinanceOfflineCache,
   type FinanceCachedCollections,
@@ -55,6 +62,7 @@ import {
 import {
   assertValidId,
   sanitizeMemberNames,
+  sanitizePaidInstallmentNumbers,
   sanitizePeriodStart,
   sanitizeStr,
   sanitizeStringArray,
@@ -162,10 +170,42 @@ interface AuthHouseholdContextValue {
   // Cards
   saveCard: (input: Parameters<typeof validateCardInput>[0], existingId?: string) => Promise<void>;
   deleteCard: (id: string) => Promise<void>;
+  recordCardInvoicePayment: (params: {
+    card: CreditCard;
+    monthKey: string;
+    amount: number;
+    mode: 'full' | 'partial';
+    dateISO?: string;
+    accountName?: string;
+  }) => Promise<void>;
+  recordCardRefund: (params: {
+    card: CreditCard;
+    description: string;
+    amount: number;
+    dateISO: string;
+    refundTargetId?: string;
+    notes?: string;
+  }) => Promise<void>;
   // Installments
   saveInstallment: (
     input: Parameters<typeof validateInstallmentInput>[0],
     existingId?: string
+  ) => Promise<void>;
+  toggleInstallmentPayment: (inst: Installment, installmentNumber: number) => Promise<void>;
+  anticipateInstallments: (
+    inst: Installment,
+    installmentNumbers: number[],
+    options?: { payNowAmount?: number; createPaymentTx?: boolean; dateISO?: string }
+  ) => Promise<void>;
+  cancelOrRefundInstallment: (
+    inst: Installment,
+    options: {
+      mode: 'full' | 'remaining' | 'numbers';
+      numbers?: number[];
+      refundedAmount?: number;
+      createCardRefundTx?: boolean;
+      dateISO?: string;
+    }
   ) => Promise<void>;
   deleteInstallment: (id: string) => Promise<void>;
   // Goals & Movements
@@ -286,7 +326,56 @@ async function commitOfflineSafe<T>(writePromise: Promise<T>): Promise<T | undef
     });
     return undefined;
   }
-  return await writePromise;
+
+  return await new Promise<T | undefined>((resolve, reject) => {
+    let settled = false;
+    const cleanup = () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('offline', onWentOffline);
+        window.clearTimeout(timerId);
+      }
+    };
+    const onWentOffline = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      void writePromise.catch((err) => {
+        console.warn('Erro ao sincronizar gravação após queda de conexão:', err);
+      });
+      resolve(undefined);
+    };
+    const timerId =
+      typeof window !== 'undefined'
+        ? window.setTimeout(() => {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            void writePromise.catch((err) => {
+              console.warn('Erro ao sincronizar gravação enfileirada no IndexedDB:', err);
+            });
+            resolve(undefined);
+          }, 4500)
+        : 0;
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('offline', onWentOffline, { once: true });
+    }
+
+    writePromise.then(
+      (res) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        resolve(res);
+      },
+      (err) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        reject(err);
+      }
+    );
+  });
 }
 
 export function AuthHouseholdProvider({ children }: { children: React.ReactNode }) {
@@ -881,9 +970,18 @@ export function AuthHouseholdProvider({ children }: { children: React.ReactNode 
         flushNow();
       }
     };
+    const handleOnline = () => {
+      void enableNetwork(db)
+        .then(() => waitForPendingWrites(db))
+        .catch(() => {
+          // O SDK retentará automaticamente a fila IndexedDB
+        });
+    };
+    window.addEventListener('online', handleOnline);
     window.addEventListener('pagehide', flushNow);
     document.addEventListener('visibilitychange', handleVisibility);
     return () => {
+      window.removeEventListener('online', handleOnline);
       window.removeEventListener('pagehide', flushNow);
       document.removeEventListener('visibilitychange', handleVisibility);
     };
@@ -1590,6 +1688,88 @@ export function AuthHouseholdProvider({ children }: { children: React.ReactNode 
     }
   };
 
+  const recordCardInvoicePayment = async (params: {
+    card: CreditCard;
+    monthKey: string;
+    amount: number;
+    mode: 'full' | 'partial';
+    dateISO?: string;
+    accountName?: string;
+  }) => {
+    const { card, monthKey, mode } = params;
+    const payDate = params.dateISO && params.dateISO.length >= 10 ? params.dateISO.slice(0, 10) : getTodayISO();
+    const inv = getCardInvoiceInMonth(card, monthKey, transactions, installments, recurringItems, payDate);
+    const targetAmount = mode === 'full' ? inv.remainingAmount : Math.min(inv.remainingAmount || params.amount, params.amount);
+    if (!Number.isFinite(targetAmount) || targetAmount <= 0.005) {
+      throw new Error('Informe um valor positivo para registrar o pagamento da fatura.');
+    }
+
+    const markerId = `card-invoice-${card.id}`;
+    const pendingMarker = transactions.find(
+      (t) => t.recurringId === markerId && t.recurringMonthKey === monthKey && t.status === 'Pendente'
+    );
+
+    const payload = {
+      type: 'Transferência' as const,
+      description:
+        mode === 'partial'
+          ? `Pagamento parcial fatura ${card.name}`
+          : `Pagamento integral fatura ${card.name}`,
+      plannedAmount: Math.round(inv.total * 100) / 100,
+      actualAmount: Math.round(targetAmount * 100) / 100,
+      category: 'Cartão',
+      person: card.holder || currentPartnerName,
+      date: payDate,
+      paymentMethod: 'Pix',
+      accountOrCard: params.accountName || card.name,
+      cardId: card.id,
+      status: 'Pago' as const,
+      dueDate: inv.dueDateISO,
+      notes: `${mode === 'partial' ? 'Pagamento parcial' : 'Quitação'} da fatura ${monthKey}`,
+      recurringId: markerId,
+      recurringMonthKey: monthKey,
+      entryKind: 'pagamento_fatura' as const,
+    };
+
+    if (pendingMarker) {
+      await saveTransaction(payload, pendingMarker.id);
+    } else {
+      await saveTransaction(payload);
+    }
+  };
+
+  const recordCardRefund = async (params: {
+    card: CreditCard;
+    description: string;
+    amount: number;
+    dateISO: string;
+    refundTargetId?: string;
+    notes?: string;
+  }) => {
+    const { card, description, amount, dateISO, refundTargetId, notes } = params;
+    if (!Number.isFinite(amount) || amount <= 0.005) {
+      throw new Error('Informe o valor positivo do estorno.');
+    }
+    const cleanDesc = sanitizeStr(description, 120) || `Estorno ${card.name}`;
+    await saveTransaction({
+      type: 'Saída',
+      description: cleanDesc.toLowerCase().includes('estorno') ? cleanDesc : `Estorno: ${cleanDesc}`,
+      plannedAmount: Math.round(amount * 100) / 100,
+      actualAmount: Math.round(amount * 100) / 100,
+      category: 'Cartão',
+      person: card.holder || currentPartnerName,
+      date: dateISO.slice(0, 10),
+      paymentMethod: 'Crédito',
+      accountOrCard: card.name,
+      cardId: card.id,
+      status: 'Pago',
+      dueDate: '',
+      notes: notes || 'Estorno lançado na fatura do cartão',
+      entryKind: 'estorno',
+      refundTargetId: refundTargetId || card.id,
+    });
+  };
+
   const saveInstallment = async (
     input: Parameters<typeof validateInstallmentInput>[0],
     existingId?: string
@@ -1600,9 +1780,37 @@ export function AuthHouseholdProvider({ children }: { children: React.ReactNode 
     try {
       if (existingId) {
         const id = assertValidId(existingId);
+        const existingInst = installments.find((item) => item.id === id);
+        const preservedPaid =
+          clean.paidInstallmentNumbers !== undefined
+            ? clean.paidInstallmentNumbers
+            : existingInst?.paidInstallmentNumbers
+              ? sanitizePaidInstallmentNumbers(existingInst.paidInstallmentNumbers, clean.installmentsCount)
+              : undefined;
+        const preservedPrepaid =
+          clean.prepaidInstallmentNumbers !== undefined
+            ? clean.prepaidInstallmentNumbers
+            : existingInst?.prepaidInstallmentNumbers
+              ? sanitizePaidInstallmentNumbers(existingInst.prepaidInstallmentNumbers, clean.installmentsCount)
+              : undefined;
+        const preservedCancelled =
+          clean.cancelledInstallmentNumbers !== undefined
+            ? clean.cancelledInstallmentNumbers
+            : existingInst?.cancelledInstallmentNumbers
+              ? sanitizePaidInstallmentNumbers(existingInst.cancelledInstallmentNumbers, clean.installmentsCount)
+              : undefined;
+        const preservedRefunded =
+          clean.refundedAmount !== undefined ? clean.refundedAmount : existingInst?.refundedAmount;
+        const preservedStatus = clean.status !== undefined ? clean.status : existingInst?.status;
+
         await commitOfflineSafe(
           updateDoc(doc(db, colPath, id), {
             ...clean,
+            ...(preservedPaid !== undefined ? { paidInstallmentNumbers: preservedPaid } : {}),
+            ...(preservedPrepaid !== undefined ? { prepaidInstallmentNumbers: preservedPrepaid } : {}),
+            ...(preservedCancelled !== undefined ? { cancelledInstallmentNumbers: preservedCancelled } : {}),
+            ...(preservedRefunded !== undefined ? { refundedAmount: preservedRefunded } : {}),
+            ...(preservedStatus !== undefined ? { status: preservedStatus } : {}),
             updatedByUid: u.uid,
             updatedByName: currentAuthorName,
             updatedAt: serverTimestamp(),
@@ -1613,6 +1821,11 @@ export function AuthHouseholdProvider({ children }: { children: React.ReactNode 
         await commitOfflineSafe(
           setDoc(newRef, {
             ...clean,
+            paidInstallmentNumbers: clean.paidInstallmentNumbers ?? [],
+            prepaidInstallmentNumbers: clean.prepaidInstallmentNumbers ?? [],
+            cancelledInstallmentNumbers: clean.cancelledInstallmentNumbers ?? [],
+            refundedAmount: clean.refundedAmount ?? 0,
+            status: clean.status ?? 'Ativo',
             createdByUid: u.uid,
             createdByName: currentAuthorName,
             updatedByUid: u.uid,
@@ -1624,6 +1837,170 @@ export function AuthHouseholdProvider({ children }: { children: React.ReactNode 
       }
     } catch (err) {
       handleFirestoreError(err, existingId ? OperationType.UPDATE : OperationType.CREATE, colPath);
+    }
+  };
+
+  const toggleInstallmentPayment = async (inst: Installment, installmentNumber: number) => {
+    const { user: u, hid } = requireContext();
+    const id = assertValidId(inst.id);
+    const num = Math.round(installmentNumber);
+    if (!Number.isInteger(num) || num < 1 || num > inst.installmentsCount) return;
+
+    const currentPaid = sanitizePaidInstallmentNumbers(inst.paidInstallmentNumbers, inst.installmentsCount);
+    const exists = currentPaid.includes(num);
+    const nextPaid = exists
+      ? currentPaid.filter((n) => n !== num)
+      : [...currentPaid, num].sort((a, b) => a - b);
+
+    const colPath = `households/${hid}/installments`;
+    try {
+      await commitOfflineSafe(
+        updateDoc(doc(db, colPath, id), {
+          paidInstallmentNumbers: nextPaid,
+          updatedByUid: u.uid,
+          updatedByName: currentAuthorName,
+          updatedAt: serverTimestamp(),
+        })
+      );
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `${colPath}/${id}`);
+    }
+  };
+
+  const anticipateInstallments = async (
+    inst: Installment,
+    installmentNumbers: number[],
+    options?: { payNowAmount?: number; createPaymentTx?: boolean; dateISO?: string }
+  ) => {
+    const { user: u, hid } = requireContext();
+    const id = assertValidId(inst.id);
+    const cleanNums = sanitizePaidInstallmentNumbers(installmentNumbers, inst.installmentsCount);
+    if (cleanNums.length === 0) {
+      throw new Error('Selecione ao menos uma parcela para antecipar.');
+    }
+
+    const currentPrepaid = sanitizePaidInstallmentNumbers(inst.prepaidInstallmentNumbers, inst.installmentsCount);
+    const nextPrepaid = Array.from(new Set([...currentPrepaid, ...cleanNums])).sort((a, b) => a - b);
+    const previewInst: Installment = { ...inst, prepaidInstallmentNumbers: nextPrepaid };
+    const nextSummary = computeInstallmentSummary(previewInst, undefined, cards);
+    const nextStatus = nextSummary.remainingInstallments === 0 ? 'Quitado' : 'Ativo';
+
+    const colPath = `households/${hid}/installments`;
+    try {
+      await commitOfflineSafe(
+        updateDoc(doc(db, colPath, id), {
+          prepaidInstallmentNumbers: nextPrepaid,
+          status: nextStatus,
+          updatedByUid: u.uid,
+          updatedByName: currentAuthorName,
+          updatedAt: serverTimestamp(),
+        })
+      );
+
+      if (options?.createPaymentTx) {
+        const payAmt =
+          options.payNowAmount && options.payNowAmount > 0
+            ? options.payNowAmount
+            : (inst.totalAmount / Math.max(1, inst.installmentsCount)) * cleanNums.length;
+        await saveTransaction({
+          type: 'Saída',
+          description: `Antecipação: ${inst.description} (${cleanNums.length}x)`,
+          plannedAmount: Math.round(payAmt * 100) / 100,
+          actualAmount: Math.round(payAmt * 100) / 100,
+          category: inst.category || 'Outros',
+          person: inst.person,
+          date: options.dateISO?.slice(0, 10) || getTodayISO(),
+          paymentMethod: 'Pix',
+          accountOrCard: household?.accounts?.[0] || 'Conta principal',
+          cardId: '',
+          status: 'Pago',
+          dueDate: '',
+          notes: `Parcelas antecipadas: ${cleanNums.join(', ')}`,
+          entryKind: 'padrao',
+        });
+      }
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `${colPath}/${id}`);
+    }
+  };
+
+  const cancelOrRefundInstallment = async (
+    inst: Installment,
+    options: {
+      mode: 'full' | 'remaining' | 'numbers';
+      numbers?: number[];
+      refundedAmount?: number;
+      createCardRefundTx?: boolean;
+      dateISO?: string;
+    }
+  ) => {
+    const { user: u, hid } = requireContext();
+    const id = assertValidId(inst.id);
+    const count = Math.max(1, inst.installmentsCount);
+    const existingPaid = new Set(sanitizePaidInstallmentNumbers(inst.paidInstallmentNumbers, count));
+    const existingPrepaid = new Set(sanitizePaidInstallmentNumbers(inst.prepaidInstallmentNumbers, count));
+    const existingCancelled = sanitizePaidInstallmentNumbers(inst.cancelledInstallmentNumbers, count);
+
+    let toCancel: number[] = [];
+    if (options.mode === 'full') {
+      toCancel = Array.from({ length: count }, (_, i) => i + 1);
+    } else if (options.mode === 'remaining') {
+      toCancel = Array.from({ length: count }, (_, i) => i + 1).filter(
+        (n) => !existingPaid.has(n) && !existingPrepaid.has(n)
+      );
+    } else {
+      toCancel = sanitizePaidInstallmentNumbers(options.numbers, count);
+    }
+
+    const nextCancelled = Array.from(new Set([...existingCancelled, ...toCancel])).sort((a, b) => a - b);
+    const installmentValue = inst.totalAmount / count;
+    const computedRefund =
+      typeof options.refundedAmount === 'number' && options.refundedAmount >= 0
+        ? options.refundedAmount
+        : toCancel.length * installmentValue;
+    const nextRefundedTotal = Math.round(((inst.refundedAmount ?? 0) + computedRefund) * 100) / 100;
+
+    const previewInst: Installment = {
+      ...inst,
+      cancelledInstallmentNumbers: nextCancelled,
+      refundedAmount: nextRefundedTotal,
+    };
+    const nextSummary = computeInstallmentSummary(previewInst, undefined, cards);
+    const nextStatus =
+      options.mode === 'full' || (nextSummary.remainingInstallments === 0 && nextSummary.paidInstallments === 0)
+        ? 'Cancelado'
+        : nextSummary.remainingInstallments === 0
+          ? 'Quitado'
+          : 'Ativo';
+
+    const colPath = `households/${hid}/installments`;
+    try {
+      await commitOfflineSafe(
+        updateDoc(doc(db, colPath, id), {
+          cancelledInstallmentNumbers: nextCancelled,
+          refundedAmount: nextRefundedTotal,
+          status: nextStatus,
+          updatedByUid: u.uid,
+          updatedByName: currentAuthorName,
+          updatedAt: serverTimestamp(),
+        })
+      );
+
+      if (options.createCardRefundTx && computedRefund > 0.005) {
+        const linkedCard = cards.find((c) => c.id === inst.cardId || c.name === inst.cardName);
+        if (linkedCard) {
+          await recordCardRefund({
+            card: linkedCard,
+            description: `Estorno parcelamento: ${inst.description}`,
+            amount: computedRefund,
+            dateISO: options.dateISO?.slice(0, 10) || getTodayISO(),
+            refundTargetId: inst.id,
+            notes: `Parcelas canceladas: ${toCancel.join(', ')}`,
+          });
+        }
+      }
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `${colPath}/${id}`);
     }
   };
 
@@ -1958,7 +2335,12 @@ export function AuthHouseholdProvider({ children }: { children: React.ReactNode 
     deleteIncome,
     saveCard,
     deleteCard,
+    recordCardInvoicePayment,
+    recordCardRefund,
     saveInstallment,
+    toggleInstallmentPayment,
+    anticipateInstallments,
+    cancelOrRefundInstallment,
     deleteInstallment,
     saveGoal,
     deleteGoal,
