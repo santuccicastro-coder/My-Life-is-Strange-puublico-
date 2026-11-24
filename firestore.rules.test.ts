@@ -80,16 +80,25 @@ describe('Firestore Security Rules Static & Invariant Verification', () => {
     assert.match(serverCode, /createAuthAndRateLimitMiddleware\('indicators'/);
   });
 
-  it('hardens server.ts endpoints and Live WebSocket with Firebase ID token verification and abuse protection', () => {
+  it('validates Prompt 6 separated expense/income categories, categoryIcons, and PlannedPurchase itemKind', () => {
+    assert.ok(blueprint.entities?.Household?.properties?.expenseCategories);
+    assert.ok(blueprint.entities?.Household?.properties?.incomeCategories);
+    assert.ok(blueprint.entities?.Household?.properties?.categoryIcons);
+    assert.ok(blueprint.entities?.PlannedPurchase?.properties?.itemKind);
+
+    assert.match(rules, /'expenseCategories'/);
+    assert.match(rules, /'incomeCategories'/);
+    assert.match(rules, /'categoryIcons'/);
+    assert.match(rules, /data\.itemKind in \['compra', 'projeto'\]/);
+  });
+
+  it('hardens server.ts endpoints with Firebase ID token verification and removes AI/Voice endpoints', () => {
     assert.match(serverCode, /verifyIdToken\(/);
     assert.match(serverCode, /provider === 'anonymous'/);
     assert.match(serverCode, /createAuthAndRateLimitMiddleware\('export-csv'/);
-    assert.match(serverCode, /createAuthAndRateLimitMiddleware\('ai-chat'/);
-    assert.match(serverCode, /createAuthAndRateLimitMiddleware\('ai-horizon'/);
-    assert.match(serverCode, /MAX_WS_PAYLOAD_BYTES/);
-    assert.match(serverCode, /MAX_WS_CONCURRENT_PER_USER/);
-    assert.match(serverCode, /WS_AUTH_TIMEOUT_MS/);
+    assert.match(serverCode, /createAuthAndRateLimitMiddleware\('indicators'/);
     assert.match(serverCode, /sanitizeCsvFormulaPrefix/);
+    assert.doesNotMatch(serverCode, /\/api\/ai\//);
   });
 
   it('documents all 12 Dirty Dozen denial scenarios', () => {

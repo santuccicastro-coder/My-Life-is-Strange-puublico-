@@ -26,11 +26,13 @@ describe('Offline-First Workbox & IndexedDB Cache Strategy', () => {
     assert.match(viteConfig, /devOptions:\s*\{[\s\S]*enabled:\s*true/);
   });
 
-  it('configures Firestore IndexedDB persistentLocalCache with multi-tab and single-tab fallback', () => {
+  it('configures Firestore IndexedDB persistentLocalCache with multi-tab and single-tab fallback and forces long-polling', () => {
     assert.match(firebaseClient, /persistentLocalCache/);
     assert.match(firebaseClient, /persistentMultipleTabManager/);
     assert.match(firebaseClient, /persistentSingleTabManager/);
     assert.match(firebaseClient, /firebaseConfig\.firestoreDatabaseId/);
+    assert.match(firebaseClient, /experimentalForceLongPolling:\s*true/);
+    assert.match(firebaseClient, /isOfflineOrUnavailableError/);
   });
 
   it('sanitizes Firestore Timestamp and serverTimestamp sentinels cleanly for IndexedDB snapshot caching', () => {
@@ -61,7 +63,6 @@ describe('Offline-First Workbox & IndexedDB Cache Strategy', () => {
       goalMovements: [],
       plannedPurchases: [],
       scenarios: [],
-      aiMessages: [],
     });
     assert.equal(snapshot.uid, 'user-1');
     assert.ok(snapshot.cachedAt.length > 10);

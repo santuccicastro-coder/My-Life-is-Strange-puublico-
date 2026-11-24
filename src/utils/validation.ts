@@ -1,11 +1,11 @@
 import type {
-  AiChatMode,
   BankAccountType,
   CardLimitRule,
   GoalMovementType,
   IncomeFrequency,
   InstallmentStatus,
   InvestmentYieldType,
+  PlannedPurchaseKind,
   PlannedPurchaseStatus,
   RecurringFrequency,
   RecurringType,
@@ -14,6 +14,55 @@ import type {
   TransactionStatus,
   TransactionType,
 } from '../types/finance';
+
+export const DEFAULT_EXPENSE_CATEGORIES: string[] = [
+  'Moradia',
+  'Alimentação',
+  'Transporte',
+  'Saúde',
+  'Educação',
+  'Lazer',
+  'Compras',
+  'Assinaturas',
+  'Contas domésticas',
+  'Impostos',
+  'Outros',
+];
+
+export const DEFAULT_INCOME_CATEGORIES: string[] = [
+  'Trabalho CLT',
+  'Trabalho autônomo',
+  'Empresa',
+  'Freelance',
+  'Mesada',
+  'Benefícios',
+  'Rendimentos de investimentos',
+  'Reembolsos',
+  'Outras receitas',
+];
+
+export const DEFAULT_CATEGORY_ICONS: Record<string, string> = {
+  Moradia: 'Home',
+  'Alimentação': 'Utensils',
+  Transporte: 'Car',
+  'Saúde': 'HeartPulse',
+  'Educação': 'GraduationCap',
+  Lazer: 'Smile',
+  Compras: 'ShoppingBag',
+  Assinaturas: 'Repeat',
+  'Contas domésticas': 'Receipt',
+  Impostos: 'Landmark',
+  Outros: 'Package',
+  'Trabalho CLT': 'Briefcase',
+  'Trabalho autônomo': 'UserCheck',
+  Empresa: 'Building2',
+  Freelance: 'Laptop',
+  Mesada: 'Coins',
+  'Benefícios': 'Gift',
+  'Rendimentos de investimentos': 'TrendingUp',
+  Reembolsos: 'RefreshCw',
+  'Outras receitas': 'Wallet',
+};
 
 const ID_PATTERN = /^[a-zA-Z0-9_\-]+$/;
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -72,11 +121,143 @@ export function sanitizePeriodStart(val: unknown): string {
 }
 
 export function sanitizeStringArray(arr: string[], maxItems: number, maxItemLen: number, fallbackItem: string): string[] {
-  const cleaned = arr
-    .map((item) => sanitizeStr(item, maxItemLen))
-    .filter((item) => item.length > 0)
-    .slice(0, maxItems);
+  const seen = new Set<string>();
+  const cleaned: string[] = [];
+  for (const item of arr) {
+    const clean = sanitizeStr(item, maxItemLen);
+    if (!clean) continue;
+    const key = clean.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    cleaned.push(clean);
+    if (cleaned.length >= maxItems) break;
+  }
   return cleaned.length > 0 ? cleaned : [fallbackItem];
+}
+
+export function sanitizeCategoryIcons(raw: Record<string, unknown> | undefined): Record<string, string> {
+  const result: Record<string, string> = {};
+  if (!raw || typeof raw !== 'object') return result;
+  for (const [k, v] of Object.entries(raw)) {
+    const key = sanitizeStr(k, 60);
+    const val = sanitizeStr(v, 40);
+    if (key && val) {
+      result[key] = val;
+    }
+    if (Object.keys(result).length >= 70) break;
+  }
+  return result;
+}
+
+const LEGACY_INCOME_ALIASES = new Set([
+  'salário',
+  'salario',
+  'salários',
+  'salarios',
+  'renda',
+  'rendas',
+  'receita',
+  'receitas',
+  'proventos',
+  'rendimentos',
+  'dividendos',
+  'bônus',
+  'bonus',
+  'pró-labore',
+  'pro-labore',
+]);
+
+export function resolveHouseholdExpenseCategories(
+  household?: { expenseCategories?: string[]; categories?: string[]; incomeCategories?: string[] } | null
+): string[] {
+  if (household?.expenseCategories && household.expenseCategories.length > 0) {
+    return sanitizeStringArray(household.expenseCategories, 35, 60, 'Outros');
+  }
+  const incomeSet = new Set([
+    ...(household?.incomeCategories ?? DEFAULT_INCOME_CATEGORIES).map((c) => c.toLowerCase().trim()),
+    ...LEGACY_INCOME_ALIASES,
+  ]);
+  const legacy = (household?.categories ?? []).filter((c) => !incomeSet.has(c.toLowerCase().trim()));
+  if (legacy.length === 0) return [...DEFAULT_EXPENSE_CATEGORIES];
+  return sanitizeStringArray([...DEFAULT_EXPENSE_CATEGORIES, ...legacy], 35, 60, 'Outros');
+}
+
+export function resolveHouseholdIncomeCategories(
+  household?: { incomeCategories?: string[] } | null
+): string[] {
+  if (household?.incomeCategories && household.incomeCategories.length > 0) {
+    return sanitizeStringArray(household.incomeCategories, 35, 60, 'Outras receitas');
+  }
+  return [...DEFAULT_INCOME_CATEGORIES];
+}
+
+export function resolvePlannedPurchaseKind(item: {
+  itemKind?: PlannedPurchaseKind;
+  projectCategory?: string;
+  room?: string;
+  iconName?: string;
+}): PlannedPurchaseKind {
+  if (item.itemKind === 'compra' || item.itemKind === 'projeto') {
+    return item.itemKind;
+  }
+  const hay = `${item.projectCategory ?? ''} ${item.room ?? ''} ${item.iconName ?? ''}`.toLowerCase();
+  const purchaseKeywords = [
+    'celular',
+    'computador',
+    'videogame',
+    'eletro',
+    'móveis',
+    'moveis',
+    'smartphone',
+    'laptop',
+    'gamepad2',
+    'refrigerator',
+    'sofa',
+    'cozinha',
+    'sala',
+    'quarto',
+    'banheiro',
+    'lavanderia',
+    'eletrônicos',
+    'eletronicos',
+    'camera',
+  ];
+  return purchaseKeywords.some((kw) => hay.includes(kw)) ? 'compra' : 'projeto';
+}
+
+export function classifyIncomeSourceToCategory(
+  source: string,
+  availableIncomeCategories: string[] = DEFAULT_INCOME_CATEGORIES
+): string {
+  const s = (source || '').toLowerCase().trim();
+  const findAvailable = (target: string) =>
+    availableIncomeCategories.find((c) => c.toLowerCase().trim() === target.toLowerCase().trim()) ?? target;
+
+  if (/clt|sal[aá]rio|holerite|f[eé]rias|13[ºo]|d[eé]cimo/.test(s)) {
+    return findAvailable('Trabalho CLT');
+  }
+  if (/aut[oô]nomo|mei\b|di[aá]ria|servi[cç]o/.test(s)) {
+    return findAvailable('Trabalho autônomo');
+  }
+  if (/empresa|pr[oó]-?labore|cnpj|s[oó]cio|lucro/.test(s)) {
+    return findAvailable('Empresa');
+  }
+  if (/freela|bico|consultoria|projeto/.test(s)) {
+    return findAvailable('Freelance');
+  }
+  if (/mesada|pens[aã]o|ajuda/.test(s)) {
+    return findAvailable('Mesada');
+  }
+  if (/benef[ií]c|vr\b|va\b|vt\b|vale|aux[ií]lio|plena|flash|caju/.test(s)) {
+    return findAvailable('Benefícios');
+  }
+  if (/rendiment|dividendo|juros|cdi|selic|fii|a[cç][õo]es|caixinha|poupan[cç]a|invest/.test(s)) {
+    return findAvailable('Rendimentos de investimentos');
+  }
+  if (/reembols|estorno|devolu[cç][aã]o|restitui[cç][aã]o/.test(s)) {
+    return findAvailable('Reembolsos');
+  }
+  return availableIncomeCategories.find((c) => c.toLowerCase().includes('outras')) ?? findAvailable('Outras receitas');
 }
 
 export function validateTransactionInput(input: {
@@ -422,6 +603,7 @@ export function validateGoalMovementInput(input: {
 
 export function validatePlannedPurchaseInput(input: {
   priority: number;
+  itemKind?: PlannedPurchaseKind;
   room: string;
   projectCategory?: string;
   iconName?: string;
@@ -444,6 +626,8 @@ export function validatePlannedPurchaseInput(input: {
   const product = sanitizeStr(input.product, 100);
   if (!product) throw new Error('Informe o nome do produto ou projeto.');
   const room = sanitizeStr(input.room, 50) || sanitizeStr(input.projectCategory, 50) || 'Outros';
+  const itemKind: PlannedPurchaseKind | undefined =
+    input.itemKind === 'compra' || input.itemKind === 'projeto' ? input.itemKind : undefined;
 
   const projectCategory =
     input.projectCategory !== undefined ? sanitizeStr(input.projectCategory, 50) : undefined;
@@ -461,6 +645,7 @@ export function validatePlannedPurchaseInput(input: {
 
   return {
     priority: sanitizeInt(input.priority, 0, 10, 5),
+    ...(itemKind !== undefined ? { itemKind } : {}),
     room,
     ...(projectCategory !== undefined ? { projectCategory } : {}),
     ...(iconName !== undefined ? { iconName } : {}),
@@ -500,24 +685,6 @@ export function validateScenarioInput(input: {
     mode: input.mode,
     customBaseExpense: sanitizeNum(input.customBaseExpense, 0, 100000000, 0),
     useCustomBaseExpense: Boolean(input.useCustomBaseExpense),
-  };
-}
-
-export function validateAiMessageInput(input: {
-  role: 'user' | 'model';
-  text: string;
-  mode: AiChatMode;
-  modelUsed: string;
-}) {
-  const text = sanitizeStr(input.text, 8000);
-  if (!text) throw new Error('Mensagem vazia.');
-  const modelUsed = sanitizeStr(input.modelUsed, 64, 'gemini-3.1-flash-lite') || 'gemini-3.1-flash-lite';
-  const mode: AiChatMode = input.mode === 'deep' ? 'deep' : 'fast';
-  return {
-    role: input.role === 'model' ? ('model' as const) : ('user' as const),
-    text,
-    mode,
-    modelUsed,
   };
 }
 

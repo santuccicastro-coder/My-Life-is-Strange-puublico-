@@ -550,69 +550,82 @@ export function CardsPage() {
               <div
                 key={card.id}
                 onClick={() => setSelectedCardId(isSelected ? 'ALL' : card.id)}
-                className={`bg-white dark:bg-slate-900 border rounded-xl p-5 space-y-4 cursor-pointer transition-colors ${
+                className={`bg-white dark:bg-slate-900 border rounded-2xl p-4 space-y-3.5 cursor-pointer transition-colors ${
                   isSelected
-                    ? 'border-slate-900 dark:border-slate-300 ring-1 ring-slate-900 dark:ring-slate-300'
-                    : 'border-slate-200 dark:border-slate-800 hover:border-slate-300'
+                    ? 'border-slate-900 dark:border-emerald-500 ring-1 ring-slate-900 dark:ring-emerald-500'
+                    : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
                 }`}
               >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <span className="w-3 h-3 rounded-xs shrink-0" style={{ backgroundColor: card.color }} />
-                    <div className="min-w-0">
-                      <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100 truncate">
-                        {card.name}
-                      </h3>
-                      <p className="text-xs text-slate-500">
-                        {card.holder} · Fecha dia {card.closingDay} · Vence dia {card.dueDay}
-                      </p>
+                {/* Face do Cartão */}
+                <div className="bg-slate-900 dark:bg-slate-950 border border-slate-800 rounded-2xl p-4 space-y-3.5 text-white shadow-xs">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <span
+                        className="w-6 h-4 rounded-sm shrink-0 border border-white/25"
+                        style={{ backgroundColor: card.color }}
+                      />
+                      <div className="min-w-0">
+                        <h3 className="text-base font-bold text-white truncate">{card.name}</h3>
+                        <p className="text-[11px] text-slate-300 truncate">
+                          {card.holder} · Fecha dia {card.closingDay}
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                    <button
-                      type="button"
-                      onClick={() => openEdit(card)}
-                      className="p-1.5 text-slate-400 hover:text-slate-900 dark:hover:text-white rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
-                      aria-label="Editar cartão"
-                    >
-                      <Pencil className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => deleteCard(card.id)}
-                      className="p-1.5 text-slate-400 hover:text-red-600 rounded-lg hover:bg-red-50 cursor-pointer"
-                      aria-label="Excluir cartão"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
 
-                <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-100 dark:border-slate-800">
-                  <div>
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <p className="text-[11px] text-slate-500">Fatura {formatMonthShort(selectedMonth)}</p>
-                      <span className={`px-1.5 py-0.5 text-[10px] font-semibold rounded border ${statusStyle.badge}`}>
-                        {statusStyle.label}
-                      </span>
+                    <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
+                      {card.limit > 0 && (
+                        <div className="text-right hidden xs:block">
+                          <p className="text-[10px] text-slate-300">Limite disponível</p>
+                          <p className="text-xs font-bold font-mono tabular-nums text-emerald-400">
+                            {formatBRL(limitUsageInfo.availableLimit)}
+                          </p>
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => openEdit(card)}
+                        className="p-1.5 text-slate-300 hover:text-white rounded-lg hover:bg-white/10 cursor-pointer"
+                        aria-label="Editar cartão"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => deleteCard(card.id)}
+                        className="p-1.5 text-slate-300 hover:text-red-300 rounded-lg hover:bg-white/10 cursor-pointer"
+                        aria-label="Excluir cartão"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
                     </div>
-                    <p className="text-lg font-bold font-mono tabular-nums text-slate-900 dark:text-slate-100 mt-0.5">
-                      {formatBRL(currentInv.remainingAmount > 0 ? currentInv.remainingAmount : currentInv.total)}
-                    </p>
-                    {currentInv.status === 'Parcialmente paga' && (
-                      <p className="text-[10px] text-amber-700 dark:text-amber-400 font-mono tabular-nums">
-                        Pago {formatBRL(currentInv.paidAmount)} de {formatBRL(currentInv.total)}
-                      </p>
-                    )}
                   </div>
-                  <div className="text-right">
-                    <p className="text-[11px] text-slate-500">Próxima ({formatMonthShort(nextMonthKey)})</p>
-                    <p className="text-sm font-semibold font-mono tabular-nums text-slate-700 dark:text-slate-300 mt-0.5">
-                      {formatBRL(nextInv.total)}
-                    </p>
-                    <p className="text-[10px] text-slate-400 font-mono tabular-nums">
-                      Parcelas: {formatBRL(committedFuture)}
-                    </p>
+
+                  <div className="grid grid-cols-2 gap-3 pt-2.5 border-t border-white/15">
+                    <div>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <p className="text-[11px] text-slate-300">Fatura {formatMonthShort(selectedMonth)}</p>
+                        <span className={`px-1.5 py-0.5 text-[10px] font-semibold rounded border ${statusStyle.badge}`}>
+                          {statusStyle.label}
+                        </span>
+                      </div>
+                      <p className="text-lg font-bold font-mono tabular-nums text-white mt-0.5">
+                        {formatBRL(currentInv.remainingAmount > 0 ? currentInv.remainingAmount : currentInv.total)}
+                      </p>
+                      {currentInv.status === 'Parcialmente paga' && (
+                        <p className="text-[10px] text-amber-200 font-mono tabular-nums">
+                          Pago {formatBRL(currentInv.paidAmount)} de {formatBRL(currentInv.total)}
+                        </p>
+                      )}
+                    </div>
+                    <div className="text-right border-l border-white/15 pl-3">
+                      <p className="text-[11px] text-slate-300">Vence dia {String(card.dueDay).padStart(2, '0')}</p>
+                      <p className="text-xs font-semibold font-mono tabular-nums text-slate-100 mt-0.5">
+                        Próx. ({formatMonthShort(nextMonthKey)}): {formatBRL(nextInv.total)}
+                      </p>
+                      <p className="text-[10px] text-slate-400 font-mono tabular-nums">
+                        Parcelas: {formatBRL(committedFuture)}
+                      </p>
+                    </div>
                   </div>
                 </div>
 

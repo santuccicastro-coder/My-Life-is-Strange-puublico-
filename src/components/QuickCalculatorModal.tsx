@@ -331,7 +331,7 @@ export function QuickCalculatorModal({ open, onClose }: QuickCalculatorModalProp
           if (e.target === e.currentTarget) onClose();
         }}
       >
-        <div className="duofin-dialog-enter w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl sm:rounded-3xl shadow-xl overflow-hidden flex flex-col max-h-[82dvh]">
+        <div className="duofin-dialog-enter w-full max-w-md md:max-w-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl sm:rounded-3xl shadow-xl overflow-hidden flex flex-col max-h-[86dvh]">
 
         {/* Cabeçalho */}
         <div className="px-4 pt-3 pb-2.5 flex items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800">
@@ -396,51 +396,53 @@ export function QuickCalculatorModal({ open, onClose }: QuickCalculatorModalProp
           </div>
         </div>
 
-        <div className="p-4 overflow-y-auto space-y-3">
+        <div className="p-4 md:p-5 overflow-y-auto space-y-3">
           {activeTab === 'rapida' ? (
-            <div key="rapida" className="duofin-tab-enter space-y-3">
-              {/* Visor numérico sem histórico */}
-              <div className="bg-slate-900 text-white rounded-2xl px-4 py-3 space-y-0.5 border border-slate-800">
-                <p className="text-xs text-slate-400 font-mono tabular-nums min-h-[16px] text-right truncate">
-                  {expressionHint || 'Digite ou use os atalhos de %'}
-                </p>
-                <p
-                  data-testid="calc-display"
-                  className="text-2xl sm:text-3xl font-bold font-mono tabular-nums text-right tracking-tight break-all"
-                >
-                  {formatCalcNumber(display)}
-                </p>
-              </div>
-
-              {/* Atalhos rápidos de acréscimo / desconto percentual */}
-              <div className="grid grid-cols-4 gap-2">
-                {[
-                  { label: '−10%', delta: -10, tone: 'negative' },
-                  { label: '−5%', delta: -5, tone: 'negative' },
-                  { label: '+5%', delta: 5, tone: 'positive' },
-                  { label: '+10%', delta: 10, tone: 'positive' },
-                ].map((shortcut) => (
-                  <button
-                    key={shortcut.label}
-                    type="button"
-                    onClick={() => applyQuickPercentDelta(shortcut.delta)}
-                    className={`min-h-[40px] rounded-xl text-xs font-bold font-mono tabular-nums transition-colors cursor-pointer whitespace-nowrap ${
-                      shortcut.tone === 'positive'
-                        ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100'
-                        : 'bg-red-50 dark:bg-red-950/50 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-900 hover:bg-red-100'
-                    }`}
+            <div key="rapida" className="duofin-tab-enter grid grid-cols-1 md:grid-cols-12 gap-3 md:gap-5 items-start">
+              <div className="md:col-span-5 space-y-3">
+                {/* Visor numérico sem histórico */}
+                <div className="bg-slate-900 text-white rounded-2xl px-4 py-3.5 space-y-0.5 border border-slate-800">
+                  <p className="text-xs text-slate-400 font-mono tabular-nums min-h-[16px] text-right truncate">
+                    {expressionHint || 'Digite ou use os atalhos de %'}
+                  </p>
+                  <p
+                    data-testid="calc-display"
+                    className="text-2xl sm:text-3xl font-bold font-mono tabular-nums text-right tracking-tight break-all"
                   >
-                    {shortcut.label}
-                  </button>
-                ))}
+                    {formatCalcNumber(display)}
+                  </p>
+                </div>
+
+                {/* Atalhos rápidos de acréscimo / desconto percentual */}
+                <div className="grid grid-cols-4 md:grid-cols-2 gap-2">
+                  {[
+                    { label: '−10%', delta: -10, tone: 'negative' },
+                    { label: '−5%', delta: -5, tone: 'negative' },
+                    { label: '+5%', delta: 5, tone: 'positive' },
+                    { label: '+10%', delta: 10, tone: 'positive' },
+                  ].map((shortcut) => (
+                    <button
+                      key={shortcut.label}
+                      type="button"
+                      onClick={() => applyQuickPercentDelta(shortcut.delta)}
+                      className={`min-h-[42px] rounded-xl text-xs font-bold font-mono tabular-nums transition-colors cursor-pointer whitespace-nowrap ${
+                        shortcut.tone === 'positive'
+                          ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100'
+                          : 'bg-red-50 dark:bg-red-950/50 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-900 hover:bg-red-100'
+                      }`}
+                    >
+                      {shortcut.label}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               {/* Teclado tátil 4x5 */}
-              <div className="grid grid-cols-4 gap-1.5 sm:gap-2">
+              <div className="md:col-span-7 grid grid-cols-4 gap-1.5 sm:gap-2">
                 <button
                   type="button"
                   onClick={handleClear}
-                  className="min-h-[46px] sm:min-h-[48px] rounded-xl sm:rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-red-600 dark:text-red-400 font-bold text-base cursor-pointer active:scale-95 transition-transform"
+                  className="min-h-[46px] sm:min-h-[48px] md:min-h-[54px] rounded-xl sm:rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-red-600 dark:text-red-400 font-bold text-base cursor-pointer active:scale-95 transition-transform"
                 >
                   C
                 </button>
@@ -448,7 +450,7 @@ export function QuickCalculatorModal({ open, onClose }: QuickCalculatorModalProp
                   type="button"
                   onClick={handleBackspace}
                   aria-label="Apagar último dígito"
-                  className="min-h-[46px] sm:min-h-[48px] rounded-xl sm:rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-200 flex items-center justify-center cursor-pointer active:scale-95 transition-transform"
+                  className="min-h-[46px] sm:min-h-[48px] md:min-h-[54px] rounded-xl sm:rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-200 flex items-center justify-center cursor-pointer active:scale-95 transition-transform"
                 >
                   <Delete className="w-5 h-5" />
                 </button>
@@ -457,7 +459,7 @@ export function QuickCalculatorModal({ open, onClose }: QuickCalculatorModalProp
                   onClick={handlePercent}
                   aria-label="Porcentagem"
                   title="Calcula % (ex: 1000 − 15 % = 850)"
-                  className="min-h-[46px] sm:min-h-[48px] rounded-xl sm:rounded-2xl bg-amber-50 dark:bg-amber-950/60 hover:bg-amber-100 text-amber-700 dark:text-amber-300 font-bold flex items-center justify-center cursor-pointer active:scale-95 transition-transform"
+                  className="min-h-[46px] sm:min-h-[48px] md:min-h-[54px] rounded-xl sm:rounded-2xl bg-amber-50 dark:bg-amber-950/60 hover:bg-amber-100 text-amber-700 dark:text-amber-300 font-bold flex items-center justify-center cursor-pointer active:scale-95 transition-transform"
                 >
                   <Percent className="w-5 h-5" />
                 </button>
@@ -465,7 +467,7 @@ export function QuickCalculatorModal({ open, onClose }: QuickCalculatorModalProp
                   type="button"
                   onClick={() => handleOperator('÷')}
                   aria-label="Dividir"
-                  className={`min-h-[46px] sm:min-h-[48px] rounded-xl sm:rounded-2xl font-bold text-xl cursor-pointer active:scale-95 transition-transform ${
+                  className={`min-h-[46px] sm:min-h-[48px] md:min-h-[54px] rounded-xl sm:rounded-2xl font-bold text-xl cursor-pointer active:scale-95 transition-transform ${
                     pendingOp === '÷' && waitingForNext
                       ? 'bg-emerald-600 text-white'
                       : 'bg-slate-900 dark:bg-slate-700 text-white hover:bg-slate-800'
@@ -479,7 +481,7 @@ export function QuickCalculatorModal({ open, onClose }: QuickCalculatorModalProp
                     key={d}
                     type="button"
                     onClick={() => handleDigit(d)}
-                    className="min-h-[46px] sm:min-h-[48px] rounded-xl sm:rounded-2xl bg-slate-50 dark:bg-slate-800/70 hover:bg-slate-100 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 font-bold font-mono text-xl cursor-pointer active:scale-95 transition-transform"
+                    className="min-h-[46px] sm:min-h-[48px] md:min-h-[54px] rounded-xl sm:rounded-2xl bg-slate-50 dark:bg-slate-800/70 hover:bg-slate-100 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 font-bold font-mono text-xl cursor-pointer active:scale-95 transition-transform"
                   >
                     {d}
                   </button>
@@ -488,7 +490,7 @@ export function QuickCalculatorModal({ open, onClose }: QuickCalculatorModalProp
                   type="button"
                   onClick={() => handleOperator('×')}
                   aria-label="Multiplicar"
-                  className={`min-h-[46px] sm:min-h-[48px] rounded-xl sm:rounded-2xl font-bold text-xl cursor-pointer active:scale-95 transition-transform ${
+                  className={`min-h-[46px] sm:min-h-[48px] md:min-h-[54px] rounded-xl sm:rounded-2xl font-bold text-xl cursor-pointer active:scale-95 transition-transform ${
                     pendingOp === '×' && waitingForNext
                       ? 'bg-emerald-600 text-white'
                       : 'bg-slate-900 dark:bg-slate-700 text-white hover:bg-slate-800'
@@ -502,7 +504,7 @@ export function QuickCalculatorModal({ open, onClose }: QuickCalculatorModalProp
                     key={d}
                     type="button"
                     onClick={() => handleDigit(d)}
-                    className="min-h-[46px] sm:min-h-[48px] rounded-xl sm:rounded-2xl bg-slate-50 dark:bg-slate-800/70 hover:bg-slate-100 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 font-bold font-mono text-xl cursor-pointer active:scale-95 transition-transform"
+                    className="min-h-[46px] sm:min-h-[48px] md:min-h-[54px] rounded-xl sm:rounded-2xl bg-slate-50 dark:bg-slate-800/70 hover:bg-slate-100 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 font-bold font-mono text-xl cursor-pointer active:scale-95 transition-transform"
                   >
                     {d}
                   </button>
@@ -511,7 +513,7 @@ export function QuickCalculatorModal({ open, onClose }: QuickCalculatorModalProp
                   type="button"
                   onClick={() => handleOperator('−')}
                   aria-label="Subtrair"
-                  className={`min-h-[46px] sm:min-h-[48px] rounded-xl sm:rounded-2xl font-bold text-xl cursor-pointer active:scale-95 transition-transform ${
+                  className={`min-h-[46px] sm:min-h-[48px] md:min-h-[54px] rounded-xl sm:rounded-2xl font-bold text-xl cursor-pointer active:scale-95 transition-transform ${
                     pendingOp === '−' && waitingForNext
                       ? 'bg-emerald-600 text-white'
                       : 'bg-slate-900 dark:bg-slate-700 text-white hover:bg-slate-800'
@@ -525,7 +527,7 @@ export function QuickCalculatorModal({ open, onClose }: QuickCalculatorModalProp
                     key={d}
                     type="button"
                     onClick={() => handleDigit(d)}
-                    className="min-h-[46px] sm:min-h-[48px] rounded-xl sm:rounded-2xl bg-slate-50 dark:bg-slate-800/70 hover:bg-slate-100 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 font-bold font-mono text-xl cursor-pointer active:scale-95 transition-transform"
+                    className="min-h-[46px] sm:min-h-[48px] md:min-h-[54px] rounded-xl sm:rounded-2xl bg-slate-50 dark:bg-slate-800/70 hover:bg-slate-100 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 font-bold font-mono text-xl cursor-pointer active:scale-95 transition-transform"
                   >
                     {d}
                   </button>
@@ -534,7 +536,7 @@ export function QuickCalculatorModal({ open, onClose }: QuickCalculatorModalProp
                   type="button"
                   onClick={() => handleOperator('+')}
                   aria-label="Somar"
-                  className={`min-h-[46px] sm:min-h-[48px] rounded-xl sm:rounded-2xl font-bold text-xl cursor-pointer active:scale-95 transition-transform ${
+                  className={`min-h-[46px] sm:min-h-[48px] md:min-h-[54px] rounded-xl sm:rounded-2xl font-bold text-xl cursor-pointer active:scale-95 transition-transform ${
                     pendingOp === '+' && waitingForNext
                       ? 'bg-emerald-600 text-white'
                       : 'bg-slate-900 dark:bg-slate-700 text-white hover:bg-slate-800'
@@ -547,14 +549,14 @@ export function QuickCalculatorModal({ open, onClose }: QuickCalculatorModalProp
                   type="button"
                   onClick={handleToggleSign}
                   aria-label="Inverter sinal"
-                  className="min-h-[46px] sm:min-h-[48px] rounded-xl sm:rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-200 font-semibold text-base cursor-pointer active:scale-95 transition-transform"
+                  className="min-h-[46px] sm:min-h-[48px] md:min-h-[54px] rounded-xl sm:rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-200 font-semibold text-base cursor-pointer active:scale-95 transition-transform"
                 >
                   +/−
                 </button>
                 <button
                   type="button"
                   onClick={() => handleDigit('0')}
-                  className="min-h-[46px] sm:min-h-[48px] rounded-xl sm:rounded-2xl bg-slate-50 dark:bg-slate-800/70 hover:bg-slate-100 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 font-bold font-mono text-xl cursor-pointer active:scale-95 transition-transform"
+                  className="min-h-[46px] sm:min-h-[48px] md:min-h-[54px] rounded-xl sm:rounded-2xl bg-slate-50 dark:bg-slate-800/70 hover:bg-slate-100 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 font-bold font-mono text-xl cursor-pointer active:scale-95 transition-transform"
                 >
                   0
                 </button>
@@ -562,7 +564,7 @@ export function QuickCalculatorModal({ open, onClose }: QuickCalculatorModalProp
                   type="button"
                   onClick={handleDecimal}
                   aria-label="Vírgula decimal"
-                  className="min-h-[46px] sm:min-h-[48px] rounded-xl sm:rounded-2xl bg-slate-50 dark:bg-slate-800/70 hover:bg-slate-100 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 font-bold font-mono text-xl cursor-pointer active:scale-95 transition-transform"
+                  className="min-h-[46px] sm:min-h-[48px] md:min-h-[54px] rounded-xl sm:rounded-2xl bg-slate-50 dark:bg-slate-800/70 hover:bg-slate-100 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 font-bold font-mono text-xl cursor-pointer active:scale-95 transition-transform"
                 >
                   ,
                 </button>
@@ -570,7 +572,7 @@ export function QuickCalculatorModal({ open, onClose }: QuickCalculatorModalProp
                   type="button"
                   onClick={handleEquals}
                   aria-label="Igual"
-                  className="min-h-[46px] sm:min-h-[48px] rounded-xl sm:rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-2xl cursor-pointer active:scale-95 transition-transform"
+                  className="min-h-[46px] sm:min-h-[48px] md:min-h-[54px] rounded-xl sm:rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-2xl cursor-pointer active:scale-95 transition-transform"
                 >
                   =
                 </button>
@@ -578,37 +580,38 @@ export function QuickCalculatorModal({ open, onClose }: QuickCalculatorModalProp
             </div>
           ) : (
             /* Modo Juros Simples / Compostos — sem histórico */
-            <div key="juros" className="duofin-tab-enter space-y-4">
-              <div className="grid grid-cols-2 gap-1.5 p-1 rounded-xl bg-slate-100 dark:bg-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setRegime('composto')}
-                  className={`min-h-[44px] rounded-lg text-xs font-semibold transition-colors whitespace-nowrap cursor-pointer ${
-                    regime === 'composto'
-                      ? 'bg-emerald-600 text-white'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
-                  }`}
-                >
-                  Juros Compostos
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setRegime('simples')}
-                  className={`min-h-[44px] rounded-lg text-xs font-semibold transition-colors whitespace-nowrap cursor-pointer ${
-                    regime === 'simples'
-                      ? 'bg-slate-900 dark:bg-slate-700 text-white'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
-                  }`}
-                >
-                  Juros Simples
-                </button>
-              </div>
+            <div key="juros" className="duofin-tab-enter grid grid-cols-1 md:grid-cols-12 gap-4 items-start">
+              <div className="md:col-span-7 space-y-4">
+                <div className="grid grid-cols-2 gap-1.5 p-1 rounded-xl bg-slate-100 dark:bg-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => setRegime('composto')}
+                    className={`min-h-[44px] rounded-lg text-xs font-semibold transition-colors whitespace-nowrap cursor-pointer ${
+                      regime === 'composto'
+                        ? 'bg-emerald-600 text-white'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                    }`}
+                  >
+                    Juros Compostos
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRegime('simples')}
+                    className={`min-h-[44px] rounded-lg text-xs font-semibold transition-colors whitespace-nowrap cursor-pointer ${
+                      regime === 'simples'
+                        ? 'bg-slate-900 dark:bg-slate-700 text-white'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                    }`}
+                  >
+                    Juros Simples
+                  </button>
+                </div>
 
-              <div className="space-y-3">
-                <label className="block space-y-1">
-                  <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                    Valor inicial / Capital (R$)
-                  </span>
+                <div className="space-y-3">
+                  <label className="block space-y-1">
+                    <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                      Valor inicial / Capital (R$)
+                    </span>
                   <input
                     type="text"
                     inputMode="decimal"
@@ -692,9 +695,10 @@ export function QuickCalculatorModal({ open, onClose }: QuickCalculatorModalProp
                   </div>
                 </div>
               </div>
+              </div>
 
               {/* Resultado instantâneo */}
-              <div className="bg-slate-900 text-white rounded-2xl p-4 space-y-3 border border-slate-800">
+              <div className="md:col-span-5 bg-slate-900 text-white rounded-2xl p-4 space-y-3 border border-slate-800">
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="text-[11px] text-slate-400">Montante final ({months}x)</p>
@@ -716,7 +720,7 @@ export function QuickCalculatorModal({ open, onClose }: QuickCalculatorModalProp
                   </button>
                 </div>
 
-                <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-800">
+                <div className="grid grid-cols-3 md:grid-cols-1 gap-2 pt-2 border-t border-slate-800">
                   <div>
                     <p className="text-[10px] text-slate-400">Total de juros</p>
                     <p className="text-xs sm:text-sm font-bold font-mono tabular-nums text-amber-400 mt-0.5">

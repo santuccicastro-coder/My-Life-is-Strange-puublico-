@@ -12,6 +12,7 @@ export default defineConfig(() => {
       tailwindcss(),
       VitePWA({
         registerType: 'autoUpdate',
+        useCredentials: true,
         includeAssets: [
           'apple-touch-icon.png',
           'icon.svg',
@@ -32,6 +33,7 @@ export default defineConfig(() => {
           scope: '/',
           start_url: '/',
           lang: 'pt-BR',
+          prefer_related_applications: false,
           icons: [
             {
               src: '/pwa-192x192.png',
@@ -138,7 +140,7 @@ export default defineConfig(() => {
         },
         devOptions: {
           enabled: true,
-          type: 'module',
+          type: 'classic',
           navigateFallback: 'index.html',
         },
       }),

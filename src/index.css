@@ -18,15 +18,15 @@
 
   body {
     font-family: var(--font-sans);
-    background-color: #F8FAFC;
-    color: #0F172A;
+    background-color: #f8fafc;
+    color: #0f172a;
     touch-action: pan-y;
     transition: background-color 150ms ease, color 150ms ease;
   }
 
   html.dark body {
     background-color: #020617;
-    color: #F1F5F9;
+    color: #f1f5f9;
   }
 
   h1, h2, h3, h4 {
@@ -62,100 +62,93 @@
 
 /* Global Dark Mode adaptation for DuoFin surfaces, borders, text, and inputs */
 html.dark :where(.bg-white) {
-  background-color: #0F172A;
+  background-color: #0f172a;
 }
 
 html.dark :where(.bg-white\/95) {
   background-color: rgba(15, 23, 42, 0.95);
 }
 
-html.dark :where(.bg-slate-50) {
+html.dark :where(.bg-slate-50),
+html.dark :where(.bg-slate-950) {
   background-color: #020617;
 }
 
-html.dark :where(.bg-slate-50\/60) {
-  background-color: rgba(15, 23, 42, 0.65);
+html.dark :where(.bg-slate-50\/60),
+html.dark :where(.bg-slate-50\/70),
+html.dark :where(.bg-slate-50\/50) {
+  background-color: rgba(30, 41, 59, 0.55);
 }
 
 html.dark :where(.bg-slate-100) {
-  background-color: #1E293B;
+  background-color: #1e293b;
 }
 
 html.dark :where(.hover\:bg-slate-50):hover {
-  background-color: #1E293B;
+  background-color: #1e293b;
 }
 
-html.dark :where(.hover\:bg-slate-100):hover {
-  background-color: #334155;
-}
-
+html.dark :where(.hover\:bg-slate-100):hover,
 html.dark :where(.hover\:bg-slate-200):hover {
   background-color: #334155;
 }
 
-html.dark :where(.border-slate-200) {
-  border-color: #1E293B;
-}
-
-html.dark :where(.border-slate-100) {
-  border-color: #1E293B;
-}
-
+html.dark :where(.border-slate-200),
+html.dark :where(.border-slate-200\/80),
+html.dark :where(.border-slate-100),
+html.dark :where(.border-slate-800),
 html.dark :where(.divide-slate-100 > :not(:last-child)) {
-  border-color: #1E293B;
+  border-color: #1e293b;
 }
 
 html.dark :where(.text-slate-900) {
-  color: #F8FAFC;
+  color: #f8fafc;
 }
 
 html.dark :where(.text-slate-800) {
-  color: #E2E8F0;
+  color: #e2e8f0;
 }
 
 html.dark :where(.text-slate-700) {
-  color: #CBD5E1;
+  color: #cbd5e1;
 }
 
-html.dark :where(.text-slate-600) {
-  color: #94A3B8;
-}
-
+html.dark :where(.text-slate-600),
 html.dark :where(.text-slate-500) {
-  color: #94A3B8;
+  color: #94a3b8;
 }
 
 html.dark :where(.text-slate-400) {
-  color: #64748B;
+  color: #64748b;
 }
 
 html.dark :where(input, select, textarea) {
   background-color: #020617;
-  color: #F1F5F9;
+  color: #f8fafc;
   border-color: #334155;
 }
 
 html.dark :where(input::placeholder, textarea::placeholder) {
-  color: #64748B;
+  color: #64748b;
 }
 
-/* Preserve readable dark contrast on intentional light-mode dark hero cards */
+/* Preserve readable dark contrast on intentional dark hero cards */
 html.dark :where(.bg-slate-900) {
-  background-color: #1E293B;
-  border-color: #334155;
+  background-color: #0f172a;
+  border-color: #1e293b;
 }
 
 html.dark :where(.bg-slate-900 .text-white),
 html.dark :where(.bg-slate-900.text-white) {
-  color: #FFFFFF;
+  color: #ffffff;
 }
 
 html.dark :where(.bg-slate-900 .text-slate-300) {
-  color: #CBD5E1;
+  color: #cbd5e1;
 }
 
 html.dark :where(.bg-slate-900 .text-slate-400) {
-  color: #94A3B8;
+  color: #94a3b8;
 }
 
 html.dark :where(.bg-emerald-50) {
@@ -165,13 +158,13 @@ html.dark :where(.border-emerald-200) {
   border-color: rgba(16, 185, 129, 0.35);
 }
 html.dark :where(.text-emerald-900) {
-  color: #A7F3D0;
+  color: #a7f3d0;
 }
 html.dark :where(.text-emerald-800) {
-  color: #6EE7B7;
+  color: #6ee7b7;
 }
 html.dark :where(.text-emerald-700) {
-  color: #4ADE80;
+  color: #34d399;
 }
 
 html.dark :where(.bg-red-50) {
@@ -181,11 +174,11 @@ html.dark :where(.border-red-200) {
   border-color: rgba(239, 68, 68, 0.35);
 }
 html.dark :where(.text-red-900) {
-  color: #FECACA;
+  color: #fecaca;
 }
 html.dark :where(.text-red-700),
 html.dark :where(.text-red-600) {
-  color: #F87171;
+  color: #f87171;
 }
 
 html.dark :where(.bg-amber-50) {
@@ -195,10 +188,10 @@ html.dark :where(.border-amber-200) {
   border-color: rgba(245, 158, 11, 0.35);
 }
 html.dark :where(.text-amber-900) {
-  color: #FDE68A;
+  color: #fde68a;
 }
 html.dark :where(.text-amber-700) {
-  color: #FBBF24;
+  color: #fbbf24;
 }
 
 html.dark :where(.bg-sky-50) {
@@ -209,7 +202,7 @@ html.dark :where(.border-sky-200) {
 }
 html.dark :where(.text-sky-900),
 html.dark :where(.text-sky-700) {
-  color: #7DD3FC;
+  color: #7dd3fc;
 }
 
 .tabular-nums {
@@ -330,4 +323,3 @@ html.dark :where(.text-sky-700) {
     animation: none !important;
   }
 }
-

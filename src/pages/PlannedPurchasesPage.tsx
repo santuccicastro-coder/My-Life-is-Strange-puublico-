@@ -1,10 +1,12 @@
 import React, { useMemo, useState } from 'react';
 import {
+  ArrowLeft,
   Bike,
   Building2,
   Camera,
   Car,
   CheckCircle2,
+  ClipboardList,
   Gamepad2,
   GraduationCap,
   HeartPulse,
@@ -16,6 +18,7 @@ import {
   Plus,
   Refrigerator,
   Search,
+  ShoppingBag,
   Smartphone,
   Sofa,
   Trash2,
@@ -23,7 +26,7 @@ import {
 } from 'lucide-react';
 import { ModalPortal } from '../components/ModalPortal';
 import { useFinance } from '../context/AuthHouseholdContext';
-import type { PlannedPurchase, PlannedPurchaseStatus } from '../types/finance';
+import type { PlannedPurchase, PlannedPurchaseKind, PlannedPurchaseStatus } from '../types/finance';
 import {
   computePlannedPurchaseMetrics,
   computeProjectsPortfolioSummary,
@@ -31,26 +34,28 @@ import {
   formatDateBR,
   formatMonthShort,
 } from '../utils/financeCalculations';
+import { resolvePlannedPurchaseKind } from '../utils/validation';
 
 interface ProjectTemplate {
   id: string;
   label: string;
   defaultRoom: string;
   iconName: string;
+  defaultKind: PlannedPurchaseKind;
 }
 
 const PROJECT_TEMPLATES: ProjectTemplate[] = [
-  { id: 'casa', label: 'Casa', defaultRoom: 'Casa', iconName: 'Home' },
-  { id: 'apartamento', label: 'Apartamento', defaultRoom: 'Apartamento', iconName: 'Building2' },
-  { id: 'carro', label: 'Carro', defaultRoom: 'Veículo', iconName: 'Car' },
-  { id: 'moto', label: 'Moto', defaultRoom: 'Veículo', iconName: 'Bike' },
-  { id: 'celular', label: 'Celular', defaultRoom: 'Eletrônicos', iconName: 'Smartphone' },
-  { id: 'computador', label: 'Computador', defaultRoom: 'Eletrônicos', iconName: 'Laptop' },
-  { id: 'videogame', label: 'Videogame', defaultRoom: 'Lazer', iconName: 'Gamepad2' },
-  { id: 'viagem', label: 'Viagem', defaultRoom: 'Viagem', iconName: 'Plane' },
-  { id: 'moveis', label: 'Móveis', defaultRoom: 'Sala', iconName: 'Sofa' },
-  { id: 'eletro', label: 'Eletrodomésticos', defaultRoom: 'Cozinha', iconName: 'Refrigerator' },
-  { id: 'outros', label: 'Outro projeto', defaultRoom: 'Outros', iconName: 'Package' },
+  { id: 'casa', label: 'Casa', defaultRoom: 'Casa', iconName: 'Home', defaultKind: 'projeto' },
+  { id: 'apartamento', label: 'Apartamento', defaultRoom: 'Apartamento', iconName: 'Building2', defaultKind: 'projeto' },
+  { id: 'carro', label: 'Carro', defaultRoom: 'Veículo', iconName: 'Car', defaultKind: 'projeto' },
+  { id: 'moto', label: 'Moto', defaultRoom: 'Veículo', iconName: 'Bike', defaultKind: 'projeto' },
+  { id: 'celular', label: 'Celular', defaultRoom: 'Eletrônicos', iconName: 'Smartphone', defaultKind: 'compra' },
+  { id: 'computador', label: 'Computador', defaultRoom: 'Eletrônicos', iconName: 'Laptop', defaultKind: 'compra' },
+  { id: 'videogame', label: 'Videogame', defaultRoom: 'Lazer', iconName: 'Gamepad2', defaultKind: 'compra' },
+  { id: 'viagem', label: 'Viagem', defaultRoom: 'Viagem', iconName: 'Plane', defaultKind: 'projeto' },
+  { id: 'moveis', label: 'Móveis', defaultRoom: 'Sala', iconName: 'Sofa', defaultKind: 'compra' },
+  { id: 'eletro', label: 'Eletrodomésticos', defaultRoom: 'Cozinha', iconName: 'Refrigerator', defaultKind: 'compra' },
+  { id: 'outros', label: 'Outro projeto', defaultRoom: 'Outros', iconName: 'Package', defaultKind: 'projeto' },
 ];
 
 const PROJECT_ICONS: Array<{ name: string; label: string; Icon: React.ComponentType<{ className?: string }> }> = [
@@ -91,6 +96,7 @@ export function PlannedPurchasesPage({ embedded = false }: { embedded?: boolean 
   const { household, plannedPurchases, goals, bankAccounts, savePlannedPurchase, deletePlannedPurchase } = useFinance();
 
   const [searchText, setSearchText] = useState('');
+  const [selectedKind, setSelectedKind] = useState<PlannedPurchaseKind | null>(null);
   const [filterStatus, setFilterStatus] = useState<string>('ALL');
   const [filterRoom, setFilterRoom] = useState<string>('ALL');
 
@@ -102,6 +108,7 @@ export function PlannedPurchasesPage({ embedded = false }: { embedded?: boolean 
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<PlannedPurchase | null>(null);
 
+  const [itemKind, setItemKind] = useState<PlannedPurchaseKind>('compra');
   const [priority, setPriority] = useState('8');
   const [projectCategory, setProjectCategory] = useState('Casa');
   const [iconName, setIconName] = useState('Home');
@@ -126,14 +133,19 @@ export function PlannedPurchasesPage({ embedded = false }: { embedded?: boolean 
 
   const goalsById = useMemo(() => new Map(goals.map((g) => [g.id, g])), [goals]);
 
-  const portfolio = useMemo(
+  const kindItems = useMemo(() => {
+    if (!selectedKind) return [];
+    return plannedPurchases.filter((item) => resolvePlannedPurchaseKind(item) === selectedKind);
+  }, [plannedPurchases, selectedKind]);
+
+  const sectionPortfolio = useMemo(
     () =>
       computeProjectsPortfolioSummary({
-        plannedPurchases,
+        plannedPurchases: kindItems,
         goals,
         bankAccounts,
       }),
-    [plannedPurchases, goals, bankAccounts]
+    [kindItems, goals, bankAccounts]
   );
 
   const categoryOptions = useMemo(() => {
@@ -145,9 +157,25 @@ export function PlannedPurchasesPage({ embedded = false }: { embedded?: boolean 
     return Array.from(base);
   }, [household?.rooms, plannedPurchases]);
 
+  const kindSummary = useMemo(() => {
+    const purchases = plannedPurchases.filter((p) => resolvePlannedPurchaseKind(p) === 'compra');
+    const projects = plannedPurchases.filter((p) => resolvePlannedPurchaseKind(p) === 'projeto');
+    const sumActive = (list: PlannedPurchase[]) =>
+      list
+        .filter((i) => i.status !== 'Cancelado')
+        .reduce((s, i) => s + (i.hasActualPrice ? i.actualUnitPrice : i.estimatedUnitPrice) * i.quantity, 0);
+    return {
+      purchaseCount: purchases.length,
+      purchaseTotal: sumActive(purchases),
+      projectCount: projects.length,
+      projectTotal: sumActive(projects),
+    };
+  }, [plannedPurchases]);
+
   const filtered = useMemo(() => {
+    if (!selectedKind) return [];
     const q = searchText.trim().toLowerCase();
-    return plannedPurchases
+    return kindItems
       .filter((item) => {
         if (filterStatus !== 'ALL' && item.status !== filterStatus) return false;
         if (filterRoom !== 'ALL' && item.room !== filterRoom && item.projectCategory !== filterRoom) return false;
@@ -158,7 +186,7 @@ export function PlannedPurchasesPage({ embedded = false }: { embedded?: boolean 
         return true;
       })
       .sort((a, b) => b.priority - a.priority);
-  }, [plannedPurchases, filterStatus, filterRoom, searchText]);
+  }, [selectedKind, kindItems, filterStatus, filterRoom, searchText]);
 
   const modalPreview = useMemo(() => {
     const qVal = Math.max(1, Number(quantity) || 1);
@@ -216,17 +244,27 @@ export function PlannedPurchasesPage({ embedded = false }: { embedded?: boolean 
   ]);
 
   const applyTemplate = (tpl: ProjectTemplate) => {
+    setItemKind(tpl.defaultKind);
     setProjectCategory(tpl.label);
     setIconName(tpl.iconName);
     setRoom(tpl.defaultRoom);
   };
 
+  const selectKind = (kind: PlannedPurchaseKind | null) => {
+    setSelectedKind(kind);
+    setSearchText('');
+    setFilterStatus('ALL');
+    setFilterRoom('ALL');
+  };
+
   const openNew = () => {
     setEditing(null);
+    const defaultKind: PlannedPurchaseKind = selectedKind === 'projeto' ? 'projeto' : 'compra';
+    setItemKind(defaultKind);
     setPriority('8');
-    setProjectCategory('Casa');
-    setIconName('Home');
-    setRoom(household?.rooms[0] ?? 'Casa');
+    setProjectCategory(defaultKind === 'compra' ? 'Celular' : 'Casa');
+    setIconName(defaultKind === 'compra' ? 'Smartphone' : 'Home');
+    setRoom(household?.rooms[0] ?? (defaultKind === 'compra' ? 'Eletrônicos' : 'Casa'));
     setProduct('');
     setBrandModel('');
     setSpecs('');
@@ -248,6 +286,7 @@ export function PlannedPurchasesPage({ embedded = false }: { embedded?: boolean 
 
   const openEdit = (item: PlannedPurchase) => {
     setEditing(item);
+    setItemKind(resolvePlannedPurchaseKind(item));
     setPriority(String(item.priority));
     setProjectCategory(item.projectCategory ?? item.room ?? 'Outros');
     setIconName(item.iconName ?? 'Package');
@@ -278,6 +317,7 @@ export function PlannedPurchasesPage({ embedded = false }: { embedded?: boolean 
     try {
       await savePlannedPurchase(
         {
+          itemKind,
           priority: Number(priority) || 5,
           room: room || projectCategory || 'Outros',
           projectCategory,
@@ -301,6 +341,7 @@ export function PlannedPurchasesPage({ embedded = false }: { embedded?: boolean 
         editing?.id
       );
       setModalOpen(false);
+      setSelectedKind(itemKind);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao salvar projeto.');
     } finally {
@@ -313,6 +354,7 @@ export function PlannedPurchasesPage({ embedded = false }: { embedded?: boolean 
     try {
       await savePlannedPurchase(
         {
+          itemKind: resolvePlannedPurchaseKind(item),
           priority: item.priority,
           room: item.room,
           projectCategory: item.projectCategory ?? item.room,
@@ -349,132 +391,278 @@ export function PlannedPurchasesPage({ embedded = false }: { embedded?: boolean 
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
-        <div>
-          {embedded ? (
-            <h2 className="text-lg font-bold tracking-tight text-slate-900 dark:text-slate-100">
-              Futuras Compras e Projetos
-            </h2>
-          ) : (
-            <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
-              Futuras Compras e Projetos
-            </h1>
-          )}
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
-            Planeje bens, reformas ou viagens com orçamento, valor reservado, prazo e impacto no seu patrimônio pessoal.
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={openNew}
-          className="inline-flex items-center gap-2 px-4 py-2.5 bg-slate-900 dark:bg-emerald-600 text-white text-xs font-semibold rounded-xl hover:bg-slate-800 dark:hover:bg-emerald-500 cursor-pointer whitespace-nowrap shrink-0"
-        >
-          <Plus className="w-4 h-4" />
-          Novo projeto / compra
-        </button>
-      </div>
+      {selectedKind === null ? (
+        <>
+          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+            <div>
+              {embedded ? (
+                <h2 className="text-lg font-bold tracking-tight text-slate-900 dark:text-slate-100">
+                  Futuras Compras e Projetos
+                </h2>
+              ) : (
+                <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
+                  Futuras Compras e Projetos
+                </h1>
+              )}
+              <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
+                Escolha uma opção abaixo para visualizar e gerenciar suas compras ou seus projetos.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={openNew}
+              className="inline-flex items-center gap-2 px-4 py-2.5 bg-slate-900 dark:bg-emerald-600 text-white text-xs font-semibold rounded-xl hover:bg-slate-800 dark:hover:bg-emerald-500 cursor-pointer whitespace-nowrap shrink-0"
+            >
+              <Plus className="w-4 h-4" />
+              Novo projeto / compra
+            </button>
+          </div>
 
-      {/* KPIs do Portfólio de Projetos e Patrimônio */}
-      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-slate-900 text-white rounded-xl p-5 space-y-1.5">
-          <span className="text-xs font-medium text-slate-300">Orçamento dos projetos ativos</span>
-          <p className="text-2xl font-bold font-mono tabular-nums text-white">
-            {formatBRL(portfolio.totalProjectsBudget)}
-          </p>
-          <p className="text-[11px] text-slate-300">
-            {portfolio.activeProjectsCount} ativo(s) · {portfolio.completedProjectsCount} concluído(s)
-          </p>
-        </div>
+          {/* Dois grandes ícones de acesso: Compras (sacola) e Projetos (prancheta) */}
+          <section className="grid grid-cols-1 sm:grid-cols-2 gap-4" aria-label="Separador Compras e Projetos">
+            <button
+              type="button"
+              onClick={() => selectKind('compra')}
+              className="text-left rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-emerald-400 dark:hover:border-emerald-600 hover:shadow-md p-6 transition-all cursor-pointer flex items-center gap-5"
+            >
+              <div className="w-20 h-20 rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 flex items-center justify-center shrink-0">
+                <ShoppingBag className="w-10 h-10" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center justify-between gap-2">
+                  <h2 className="text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
+                    Compras
+                  </h2>
+                  <span className="text-xs font-mono font-bold tabular-nums text-emerald-700 dark:text-emerald-400">
+                    {kindSummary.purchaseCount} {kindSummary.purchaseCount === 1 ? 'item' : 'itens'}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                  Tudo registrado como compra de produtos, itens e equipamentos.
+                </p>
+                <p className="text-xs font-mono font-semibold tabular-nums text-slate-700 dark:text-slate-300 mt-2">
+                  Total planejado: {formatBRL(kindSummary.purchaseTotal)}
+                </p>
+              </div>
+            </button>
 
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 space-y-1.5">
-          <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Já reservado / falta guardar</span>
-          <p className="text-2xl font-bold font-mono tabular-nums text-emerald-700 dark:text-emerald-400">
-            {formatBRL(portfolio.totalSavedForProjects)}
-          </p>
-          <p className="text-[11px] text-slate-500 dark:text-slate-400 font-mono tabular-nums">
-            Falta guardar: {formatBRL(portfolio.totalRemainingForProjects)}
-          </p>
-        </div>
-
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 space-y-1.5">
-          <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Comprometimento do patrimônio</span>
-          <p className="text-2xl font-bold font-mono tabular-nums text-slate-900 dark:text-slate-100">
-            {portfolio.committedPatrimonyPct.toFixed(1).replace('.', ',')}%
-          </p>
-          <p className="text-[11px] text-slate-500 dark:text-slate-400 font-mono tabular-nums">
-            Patrimônio base: {formatBRL(portfolio.totalPatrimony)}
-          </p>
-        </div>
-
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 space-y-1.5">
-          <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Aporte mensal em projetos</span>
-          <p className="text-2xl font-bold font-mono tabular-nums text-slate-900 dark:text-slate-100">
-            {formatBRL(portfolio.totalMonthlyContributions)}
-          </p>
-          <p className="text-[11px] text-slate-500 dark:text-slate-400">Soma dos planos mensais ativos</p>
-        </div>
-      </section>
-
-      {/* Filtros e Busca */}
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="relative flex-1 min-w-[200px] max-w-sm">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-          <input
-            type="text"
-            value={searchText}
-            onChange={(e) => setSearchText(e.target.value)}
-            placeholder="Buscar projeto, modelo ou categoria..."
-            className="w-full pl-9 pr-3 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900"
-          />
-        </div>
-        <select
-          aria-label="Filtrar por status"
-          value={filterStatus}
-          onChange={(e) => setFilterStatus(e.target.value)}
-          className="px-3 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900"
-        >
-          <option value="ALL">Todos os status</option>
-          <option value="Pendente">Pendente</option>
-          <option value="Pesquisando">Pesquisando</option>
-          <option value="Comprado">Comprado</option>
-          <option value="Cancelado">Cancelado</option>
-        </select>
-        <select
-          aria-label="Filtrar por categoria"
-          value={filterRoom}
-          onChange={(e) => setFilterRoom(e.target.value)}
-          className="px-3 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900"
-        >
-          <option value="ALL">Todas as categorias</option>
-          {categoryOptions.map((r) => (
-            <option key={r} value={r}>
-              {r}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      {/* Cards de Projetos / Futuras Compras */}
-      {filtered.length === 0 ? (
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-10 text-center space-y-3">
-          <Package className="w-8 h-8 text-slate-300 mx-auto" />
-          <p className="text-sm font-medium text-slate-700 dark:text-slate-200">
-            Nenhum projeto ou compra futura encontrada.
-          </p>
-          <p className="text-xs text-slate-500 dark:text-slate-400">
-            Cadastre objetivos como Casa, Carro, Celular ou Viagem para acompanhar o progresso até a compra.
-          </p>
-          <button
-            type="button"
-            onClick={openNew}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-slate-900 dark:bg-emerald-600 text-white text-xs font-semibold rounded-xl hover:bg-slate-800 cursor-pointer"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            Criar primeiro projeto
-          </button>
-        </div>
+            <button
+              type="button"
+              onClick={() => selectKind('projeto')}
+              className="text-left rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-sky-400 dark:hover:border-sky-600 hover:shadow-md p-6 transition-all cursor-pointer flex items-center gap-5"
+            >
+              <div className="w-20 h-20 rounded-2xl bg-sky-50 dark:bg-sky-950/60 text-sky-700 dark:text-sky-400 flex items-center justify-center shrink-0">
+                <ClipboardList className="w-10 h-10" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center justify-between gap-2">
+                  <h2 className="text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
+                    Projetos
+                  </h2>
+                  <span className="text-xs font-mono font-bold tabular-nums text-sky-700 dark:text-sky-400">
+                    {kindSummary.projectCount} {kindSummary.projectCount === 1 ? 'projeto' : 'projetos'}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                  Projetos em geral, reformas, metas patrimoniais, veículos e viagens.
+                </p>
+                <p className="text-xs font-mono font-semibold tabular-nums text-slate-700 dark:text-slate-300 mt-2">
+                  Total planejado: {formatBRL(kindSummary.projectTotal)}
+                </p>
+              </div>
+            </button>
+          </section>
+        </>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => selectKind(null)}
+                aria-label="Voltar para Compras e Projetos"
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer shrink-0"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                Voltar
+              </button>
+              <div
+                className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                  selectedKind === 'compra'
+                    ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400'
+                    : 'bg-sky-50 dark:bg-sky-950/60 text-sky-700 dark:text-sky-400'
+                }`}
+              >
+                {selectedKind === 'compra' ? (
+                  <ShoppingBag className="w-5 h-5" />
+                ) : (
+                  <ClipboardList className="w-5 h-5" />
+                )}
+              </div>
+              <div>
+                {embedded ? (
+                  <h2 className="text-lg font-bold tracking-tight text-slate-900 dark:text-slate-100">
+                    {selectedKind === 'compra' ? 'Compras' : 'Projetos'}
+                  </h2>
+                ) : (
+                  <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
+                    {selectedKind === 'compra' ? 'Compras' : 'Projetos'}
+                  </h1>
+                )}
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  {selectedKind === 'compra'
+                    ? 'Itens, equipamentos e produtos registrados como compras.'
+                    : 'Projetos em geral, metas patrimoniais, veículos, reformas e viagens.'}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => selectKind(selectedKind === 'compra' ? 'projeto' : 'compra')}
+                className="inline-flex items-center gap-1.5 px-3 py-2.5 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 text-xs font-semibold rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer whitespace-nowrap"
+              >
+                {selectedKind === 'compra' ? (
+                  <>
+                    <ClipboardList className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400" />
+                    Abrir Projetos ({kindSummary.projectCount})
+                  </>
+                ) : (
+                  <>
+                    <ShoppingBag className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                    Abrir Compras ({kindSummary.purchaseCount})
+                  </>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={openNew}
+                className="inline-flex items-center gap-2 px-4 py-2.5 bg-slate-900 dark:bg-emerald-600 text-white text-xs font-semibold rounded-xl hover:bg-slate-800 dark:hover:bg-emerald-500 cursor-pointer whitespace-nowrap"
+              >
+                <Plus className="w-4 h-4" />
+                {selectedKind === 'compra' ? 'Nova compra' : 'Novo projeto'}
+              </button>
+            </div>
+          </div>
+
+          {/* KPIs da seção aberta */}
+          <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-slate-900 text-white rounded-xl p-5 space-y-1.5">
+              <span className="text-xs font-medium text-slate-300">
+                {selectedKind === 'compra' ? 'Orçamento das compras ativas' : 'Orçamento dos projetos ativos'}
+              </span>
+              <p className="text-2xl font-bold font-mono tabular-nums text-white">
+                {formatBRL(sectionPortfolio.totalProjectsBudget)}
+              </p>
+              <p className="text-[11px] text-slate-300">
+                {sectionPortfolio.activeProjectsCount} ativo(s) · {sectionPortfolio.completedProjectsCount} concluído(s)
+              </p>
+            </div>
+
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 space-y-1.5">
+              <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Já reservado / falta guardar</span>
+              <p className="text-2xl font-bold font-mono tabular-nums text-emerald-700 dark:text-emerald-400">
+                {formatBRL(sectionPortfolio.totalSavedForProjects)}
+              </p>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 font-mono tabular-nums">
+                Falta guardar: {formatBRL(sectionPortfolio.totalRemainingForProjects)}
+              </p>
+            </div>
+
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 space-y-1.5">
+              <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Comprometimento do patrimônio</span>
+              <p className="text-2xl font-bold font-mono tabular-nums text-slate-900 dark:text-slate-100">
+                {sectionPortfolio.committedPatrimonyPct.toFixed(1).replace('.', ',')}%
+              </p>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 font-mono tabular-nums">
+                Patrimônio base: {formatBRL(sectionPortfolio.totalPatrimony)}
+              </p>
+            </div>
+
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 space-y-1.5">
+              <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                {selectedKind === 'compra' ? 'Aporte mensal em compras' : 'Aporte mensal em projetos'}
+              </span>
+              <p className="text-2xl font-bold font-mono tabular-nums text-slate-900 dark:text-slate-100">
+                {formatBRL(sectionPortfolio.totalMonthlyContributions)}
+              </p>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">Soma dos planos mensais ativos</p>
+            </div>
+          </section>
+
+          {/* Filtros e Busca */}
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="relative flex-1 min-w-[200px] max-w-sm">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                type="text"
+                value={searchText}
+                onChange={(e) => setSearchText(e.target.value)}
+                placeholder={
+                  selectedKind === 'compra'
+                    ? 'Buscar compra, modelo ou categoria...'
+                    : 'Buscar projeto, modelo ou categoria...'
+                }
+                className="w-full pl-9 pr-3 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900"
+              />
+            </div>
+            <select
+              aria-label="Filtrar por status"
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+              className="px-3 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900"
+            >
+              <option value="ALL">Todos os status</option>
+              <option value="Pendente">Pendente</option>
+              <option value="Pesquisando">Pesquisando</option>
+              <option value="Comprado">Comprado</option>
+              <option value="Cancelado">Cancelado</option>
+            </select>
+            <select
+              aria-label="Filtrar por categoria"
+              value={filterRoom}
+              onChange={(e) => setFilterRoom(e.target.value)}
+              className="px-3 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900"
+            >
+              <option value="ALL">Todas as categorias</option>
+              {categoryOptions.map((r) => (
+                <option key={r} value={r}>
+                  {r}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Cards da seção selecionada */}
+          {filtered.length === 0 ? (
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-10 text-center space-y-3">
+              {selectedKind === 'compra' ? (
+                <ShoppingBag className="w-8 h-8 text-slate-300 mx-auto" />
+              ) : (
+                <ClipboardList className="w-8 h-8 text-slate-300 mx-auto" />
+              )}
+              <p className="text-sm font-medium text-slate-700 dark:text-slate-200">
+                {selectedKind === 'compra'
+                  ? 'Nenhuma compra registrada.'
+                  : 'Nenhum projeto encontrado.'}
+              </p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                {selectedKind === 'compra'
+                  ? 'Cadastre itens como Celular, Computador, Móveis ou Eletrodomésticos para acompanhar o valor reservado.'
+                  : 'Cadastre objetivos como Casa, Carro, Moto ou Viagem para acompanhar o progresso até a realização.'}
+              </p>
+              <button
+                type="button"
+                onClick={openNew}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-slate-900 dark:bg-emerald-600 text-white text-xs font-semibold rounded-xl hover:bg-slate-800 cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                {selectedKind === 'compra' ? 'Cadastrar compra' : 'Criar projeto'}
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {filtered.map((item) => {
             const linkedGoal = item.linkedGoalId ? goalsById.get(item.linkedGoalId) : undefined;
             const overrideMonthly = paceOverrides[item.id];
@@ -503,6 +691,10 @@ export function PlannedPurchasesPage({ embedded = false }: { embedded?: boolean 
                         {item.product} {item.quantity > 1 ? `(${item.quantity}x)` : ''}
                       </h3>
                       <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                        <span className="font-semibold text-slate-700 dark:text-slate-300">
+                          {resolvePlannedPurchaseKind(item) === 'compra' ? 'Compra' : 'Projeto'}
+                        </span>
+                        <span aria-hidden="true">·</span>
                         <span>{item.projectCategory || item.room}</span>
                         <span aria-hidden="true">·</span>
                         <span className={`font-mono font-semibold ${item.priority >= 8 ? 'text-red-600 dark:text-red-400' : 'text-slate-700 dark:text-slate-300'}`}>
@@ -692,6 +884,8 @@ export function PlannedPurchasesPage({ embedded = false }: { embedded?: boolean 
             );
           })}
         </div>
+          )}
+        </>
       )}
 
       {/* Modal Projeto / Futura Compra */}
@@ -721,6 +915,39 @@ export function PlannedPurchasesPage({ embedded = false }: { embedded?: boolean 
                 {error && (
                   <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700">{error}</div>
                 )}
+
+                {/* Tipo de registro: Compra (Sacola) vs Projeto (Prancheta) */}
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">
+                    Tipo de registro
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setItemKind('compra')}
+                      className={`min-h-[44px] px-3 py-2 rounded-xl border text-xs font-semibold flex items-center justify-center gap-2 cursor-pointer transition-colors ${
+                        itemKind === 'compra'
+                          ? 'bg-emerald-600 text-white border-emerald-600'
+                          : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+                      }`}
+                    >
+                      <ShoppingBag className="w-4 h-4" />
+                      Compra (Sacola)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setItemKind('projeto')}
+                      className={`min-h-[44px] px-3 py-2 rounded-xl border text-xs font-semibold flex items-center justify-center gap-2 cursor-pointer transition-colors ${
+                        itemKind === 'projeto'
+                          ? 'bg-slate-900 dark:bg-sky-700 text-white border-slate-900 dark:border-sky-700'
+                          : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+                      }`}
+                    >
+                      <ClipboardList className="w-4 h-4" />
+                      Projeto (Prancheta)
+                    </button>
+                  </div>
+                </div>
 
                 {/* Modelos rápidos de projeto */}
                 <div className="space-y-1.5">

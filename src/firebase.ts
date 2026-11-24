@@ -14,7 +14,11 @@ import firebaseConfig from '../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
 
+const isBrowser = typeof window !== 'undefined';
+
 function createFirestoreClient(): Firestore {
+  const transportSettings = isBrowser ? { experimentalForceLongPolling: true } : {};
+
   try {
     return initializeFirestore(
       app,
@@ -22,6 +26,7 @@ function createFirestoreClient(): Firestore {
         localCache: persistentLocalCache({
           tabManager: persistentMultipleTabManager(),
         }),
+        ...transportSettings,
       },
       firebaseConfig.firestoreDatabaseId
     );
@@ -33,6 +38,7 @@ function createFirestoreClient(): Firestore {
           localCache: persistentLocalCache({
             tabManager: persistentSingleTabManager({ forceOwnership: false }),
           }),
+          ...transportSettings,
         },
         firebaseConfig.firestoreDatabaseId
       );
@@ -71,6 +77,21 @@ export interface FirestoreErrorInfo {
   };
 }
 
+export function isOfflineOrUnavailableError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const code =
+    'code' in error && typeof (error as { code?: unknown }).code === 'string'
+      ? (error as { code: string }).code.toLowerCase()
+      : '';
+  const message = error.message.toLowerCase();
+  return (
+    code === 'unavailable' ||
+    message.includes('the client is offline') ||
+    message.includes('could not reach cloud firestore backend') ||
+    message.includes('network error')
+  );
+}
+
 export function handleFirestoreError(
   error: unknown,
   operationType: OperationType,
@@ -101,11 +122,28 @@ async function testConnection() {
   if (typeof navigator !== 'undefined' && !navigator.onLine) {
     return;
   }
+
+  const probe = () => getDocFromServer(doc(db, 'test', 'connection'));
+
   try {
-    await getDocFromServer(doc(db, 'test', 'connection'));
+    await probe();
   } catch (error) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.error('Verifique sua configuração do Firebase: o cliente está offline.');
+    if (!isOfflineOrUnavailableError(error)) {
+      return;
+    }
+
+    // Aguarda a inicialização de rede/long-polling antes de concluir que o cliente está offline
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      return;
+    }
+
+    try {
+      await probe();
+    } catch (retryError) {
+      if (isOfflineOrUnavailableError(retryError)) {
+        console.warn('Firestore operando em modo offline temporário; dados locais permanecerão disponíveis.');
+      }
     }
   }
 }

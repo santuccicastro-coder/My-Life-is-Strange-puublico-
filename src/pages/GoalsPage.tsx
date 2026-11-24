@@ -72,6 +72,7 @@ export function GoalsPage() {
     goals,
     goalMovements,
     bankAccounts,
+    transactions,
     currentPartnerName,
     saveGoal,
     deleteGoal,
@@ -768,7 +769,7 @@ export function GoalsPage() {
       </section>
 
       {/* Navegação em Abas */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-1 p-1 bg-slate-100 dark:bg-slate-900 rounded-xl border border-slate-200/80 dark:border-slate-800">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-1 p-1 bg-slate-100 dark:bg-slate-800/80 rounded-2xl border border-slate-200 dark:border-slate-800">
         {(
           [
             { id: 'cofrinho', label: 'Caixinhas & Metas', icon: PiggyBank },
@@ -784,13 +785,13 @@ export function GoalsPage() {
               key={tab.id}
               type="button"
               onClick={() => setActiveTab(tab.id)}
-              className={`min-h-[42px] px-2.5 py-2 rounded-lg text-xs font-semibold inline-flex items-center justify-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+              className={`min-h-[42px] px-2.5 py-2 rounded-xl text-xs font-semibold inline-flex items-center justify-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
                 active
-                  ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-xs'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                  ? 'bg-slate-900 dark:bg-emerald-600 text-white shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
               }`}
             >
-              <Icon className={`w-3.5 h-3.5 shrink-0 ${active ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}`} />
+              <Icon className="w-3.5 h-3.5 shrink-0" />
               <span className="truncate">{tab.label}</span>
             </button>
           );
@@ -799,12 +800,12 @@ export function GoalsPage() {
 
       {/* KPIs Consolidados */}
       <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-slate-900 text-white rounded-xl p-5 space-y-1.5">
-          <span className="text-xs font-medium text-slate-300">Patrimônio acumulado</span>
-          <p className="text-2xl font-bold font-mono tabular-nums text-emerald-300">
+        <div className="bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/60 text-emerald-900 dark:text-emerald-100 rounded-2xl p-5 space-y-1.5">
+          <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-300">Patrimônio acumulado</span>
+          <p className="text-2xl font-bold font-mono tabular-nums text-emerald-800 dark:text-emerald-200">
             {formatBRL(summary.totalConsolidated)}
           </p>
-          <p className="text-[11px] text-slate-300 font-mono tabular-nums">
+          <p className="text-[11px] text-emerald-700 dark:text-emerald-300/80 font-mono tabular-nums">
             Caixinhas {formatBRL(summary.totalSavedGoals)} + Contas {formatBRL(summary.totalInInvestmentAccounts)}
           </p>
         </div>

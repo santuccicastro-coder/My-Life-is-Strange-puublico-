@@ -85,7 +85,8 @@ service cloud.firestore {
         && data.keys().hasOnly([
           'name', 'ownerUid', 'memberUids', 'memberNames', 'partner1Uid', 'partner2Uid',
           'partner1Name', 'partner2Name', 'periodStart',
-          'categories', 'paymentMethods', 'rooms', 'accounts',
+          'categories', 'expenseCategories', 'incomeCategories', 'categoryIcons',
+          'paymentMethods', 'rooms', 'accounts',
           'lastInviteCode', 'createdAt', 'updatedAt'
         ])
         && data.name is string && data.name.size() >= 1 && data.name.size() <= 80
@@ -104,7 +105,10 @@ service cloud.firestore {
         && data.partner1Name is string && data.partner1Name.size() >= 1 && data.partner1Name.size() <= 50
         && data.partner2Name is string && data.partner2Name.size() >= 1 && data.partner2Name.size() <= 50
         && data.periodStart is string && data.periodStart.size() == 10 && data.periodStart.matches('^\\d{4}-\\d{2}-01$')
-        && data.categories is list && data.categories.size() >= 1 && data.categories.size() <= 30 && data.categories[0] is string && data.categories[0].size() <= 60
+        && data.categories is list && data.categories.size() >= 1 && data.categories.size() <= 60 && data.categories[0] is string && data.categories[0].size() <= 60
+        && (!('expenseCategories' in data) || (data.expenseCategories is list && data.expenseCategories.size() >= 1 && data.expenseCategories.size() <= 35 && data.expenseCategories[0] is string && data.expenseCategories[0].size() <= 60))
+        && (!('incomeCategories' in data) || (data.incomeCategories is list && data.incomeCategories.size() >= 1 && data.incomeCategories.size() <= 35 && data.incomeCategories[0] is string && data.incomeCategories[0].size() <= 60))
+        && (!('categoryIcons' in data) || (data.categoryIcons is map && data.categoryIcons.size() <= 70))
         && data.paymentMethods is list && data.paymentMethods.size() >= 1 && data.paymentMethods.size() <= 20 && data.paymentMethods[0] is string && data.paymentMethods[0].size() <= 40
         && data.rooms is list && data.rooms.size() >= 1 && data.rooms.size() <= 25 && data.rooms[0] is string && data.rooms[0].size() <= 50
         && data.accounts is list && data.accounts.size() >= 1 && data.accounts.size() <= 25 && data.accounts[0] is string && data.accounts[0].size() <= 60
@@ -352,13 +356,14 @@ service cloud.firestore {
           'createdByUid', 'createdByName', 'updatedByUid', 'updatedByName', 'createdAt', 'updatedAt'
         ])
         && data.keys().hasOnly([
-          'priority', 'room', 'projectCategory', 'iconName', 'product', 'brandModel', 'specs', 'quantity',
+          'priority', 'itemKind', 'room', 'projectCategory', 'iconName', 'product', 'brandModel', 'specs', 'quantity',
           'estimatedUnitPrice', 'actualUnitPrice', 'hasActualPrice',
           'savedAmount', 'monthlyContribution', 'linkedGoalId',
           'targetDate', 'purchaseDate', 'paymentMethod', 'status', 'notes',
           'createdByUid', 'createdByName', 'updatedByUid', 'updatedByName', 'createdAt', 'updatedAt'
         ])
         && data.priority is int && data.priority >= 0 && data.priority <= 10
+        && (!('itemKind' in data) || (data.itemKind in ['compra', 'projeto']))
         && data.room is string && data.room.size() >= 1 && data.room.size() <= 50
         && (!('projectCategory' in data) || (data.projectCategory is string && data.projectCategory.size() <= 50))
         && (!('iconName' in data) || (data.iconName is string && data.iconName.size() <= 40))
@@ -523,7 +528,8 @@ service cloud.firestore {
             && incoming().partner2Uid == existing().partner2Uid
             && incoming().diff(existing()).affectedKeys().hasOnly([
               'name', 'partner1Name', 'partner2Name', 'memberNames', 'periodStart',
-              'categories', 'paymentMethods', 'rooms', 'accounts', 'updatedAt'
+              'categories', 'expenseCategories', 'incomeCategories', 'categoryIcons',
+              'paymentMethods', 'rooms', 'accounts', 'updatedAt'
             ]))
           ||
           // Action 2: New member (up to 7) joins atomically using a single-use invite
@@ -772,7 +778,7 @@ service cloud.firestore {
           && incoming().updatedAt == request.time
           && isHouseholdMember(householdId)
           && incoming().diff(existing()).affectedKeys().hasOnly([
-            'priority', 'room', 'projectCategory', 'iconName', 'product', 'brandModel', 'specs', 'quantity',
+            'priority', 'itemKind', 'room', 'projectCategory', 'iconName', 'product', 'brandModel', 'specs', 'quantity',
             'estimatedUnitPrice', 'actualUnitPrice', 'hasActualPrice',
             'savedAmount', 'monthlyContribution', 'linkedGoalId',
             'targetDate', 'purchaseDate', 'paymentMethod', 'status', 'notes',

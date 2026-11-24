@@ -1,13 +1,11 @@
 import 'dotenv/config';
-import { GoogleGenAI, LiveServerMessage, Modality, ThinkingLevel } from '@google/genai';
-import express, { NextFunction, Request, Response } from 'express';
+import express, { type NextFunction, type Request, type Response } from 'express';
 import { getApp, getApps, initializeApp } from 'firebase-admin/app';
-import { DecodedIdToken, getAuth } from 'firebase-admin/auth';
+import { getAuth, type DecodedIdToken } from 'firebase-admin/auth';
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { WebSocket, WebSocketServer } from 'ws';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -15,15 +13,7 @@ const __dirname = path.dirname(__filename);
 const PORT = Number(process.env.PORT) || 3000;
 const IS_PROD = process.env.NODE_ENV === 'production';
 
-const MAX_CONTEXT_SUMMARY_CHARS = 16000;
-const MAX_HORIZON_SUMMARY_CHARS = 8000;
-const MAX_CHAT_MESSAGE_CHARS = 4000;
-const MAX_CHAT_MESSAGES = 24;
 const MAX_EXPORT_ROWS = 5000;
-const MAX_WS_PAYLOAD_BYTES = 256 * 1024;
-const MAX_WS_CONCURRENT_PER_USER = 2;
-const MAX_WS_SESSION_MS = 5 * 60 * 1000;
-const WS_AUTH_TIMEOUT_MS = 5000;
 
 interface FirebaseAppletConfig {
   projectId?: string;
@@ -164,51 +154,6 @@ interface ExportRow {
   status?: string;
   createdByName?: string;
   notes?: string;
-}
-
-interface ChatTurnInput {
-  role: 'user' | 'model';
-  text: string;
-}
-
-function getGenAIClient(): GoogleGenAI {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    throw new Error('Chave de API Gemini não configurada no servidor.');
-  }
-  return new GoogleGenAI({
-    apiKey,
-    httpOptions: {
-      headers: {
-        'User-Agent': 'aistudio-build',
-      },
-    },
-  });
-}
-
-function buildFinancialSystemInstruction(
-  contextSummary?: string,
-  mode: 'fast' | 'deep' = 'fast'
-): string {
-  const modeRule =
-    mode === 'deep'
-      ? 'Modo Profunda: explique passo a passo com palavras simples o que acontece mês a mês na renda, faturas e metas, e dê ideias práticas do que ajustar para sobrar dinheiro.'
-      : 'Modo Rápido: responda em no máximo 2 a 4 frases curtas, indo direto ao número final de quanto tira e quanto fica.';
-
-  const base = [
-    'Você é o Assistente Financeiro do DuoFin.',
-    'Comunique-se sempre em português brasileiro com uma linguagem bem básica, simples e do dia a dia — nunca use termos técnicos difíceis de economia ou contabilidade.',
-    'Use exclusivamente os números reais do contexto abaixo em Reais (R$) e nunca invente valores.',
-    'Sempre que o usuário perguntar sobre uma compra, gasto, parcela ou mudança, faça a conta direta e mostre exatamente no estilo: "Se fizer isso vai tirar R$ X da sua renda e fica R$ Y livre" (ou "vai faltar R$ Y" se ficar negativo).',
-    modeRule,
-  ].join(' ');
-
-  const boundedContext =
-    typeof contextSummary === 'string' ? contextSummary.trim().slice(0, MAX_CONTEXT_SUMMARY_CHARS) : '';
-  if (!boundedContext) {
-    return base;
-  }
-  return `${base}\n\n[DADOS ATUAIS]\n${boundedContext}`;
 }
 
 export function sanitizeCsvFormulaPrefix(raw: string): string {
@@ -409,144 +354,7 @@ async function startServer() {
     }
   );
 
-  app.post(
-    '/api/ai/chat',
-    createAuthAndRateLimitMiddleware('ai-chat', 20, 60_000),
-    async (req, res) => {
-      try {
-        if (!Array.isArray(req.body?.messages)) {
-          return res.status(400).json({ error: 'Formato de mensagens inválido.' });
-        }
-        const rawMessages = req.body.messages as ChatTurnInput[];
-        const mode: 'fast' | 'deep' = req.body?.mode === 'deep' ? 'deep' : 'fast';
-        const contextSummary =
-          typeof req.body?.contextSummary === 'string'
-            ? req.body.contextSummary.slice(0, MAX_CONTEXT_SUMMARY_CHARS)
-            : '';
-
-        const validMessages = rawMessages
-          .filter(
-            (m) =>
-              m &&
-              (m.role === 'user' || m.role === 'model') &&
-              typeof m.text === 'string' &&
-              m.text.trim().length > 0
-          )
-          .slice(-MAX_CHAT_MESSAGES)
-          .map((m) => ({
-            role: m.role,
-            text: m.text.trim().slice(0, MAX_CHAT_MESSAGE_CHARS),
-          }));
-
-        if (validMessages.length === 0) {
-          return res
-            .status(400)
-            .json({ error: 'Envie ao menos uma mensagem para conversar com o assistente.' });
-        }
-
-        const ai = getGenAIClient();
-        const primaryModel = mode === 'fast' ? 'gemini-3.1-flash-lite' : 'gemini-4-hydrogen';
-        const formattedContents = validMessages.map((m) => ({
-          role: m.role,
-          parts: [{ text: m.text }],
-        }));
-        const systemInstruction = buildFinancialSystemInstruction(contextSummary, mode);
-
-        let modelUsed = primaryModel;
-        let response;
-        try {
-          response = await ai.models.generateContent({
-            model: primaryModel,
-            contents: formattedContents,
-            config: {
-              systemInstruction,
-              ...(mode === 'deep'
-                ? {
-                    thinkingConfig: {
-                      thinkingLevel: ThinkingLevel.HIGH,
-                    },
-                  }
-                : {}),
-            },
-          });
-        } catch (primaryErr) {
-          const msg = primaryErr instanceof Error ? primaryErr.message : String(primaryErr);
-          const isTransient = msg.includes('503') || msg.includes('UNAVAILABLE') || msg.includes('429');
-          if (primaryModel !== 'gemini-3.1-flash-lite' && isTransient) {
-            modelUsed = 'gemini-3.1-flash-lite';
-            response = await ai.models.generateContent({
-              model: modelUsed,
-              contents: formattedContents,
-              config: { systemInstruction },
-            });
-          } else {
-            throw primaryErr;
-          }
-        }
-
-        const reply =
-          response.text?.trim() ||
-          'Não consegui formular uma resposta agora. Tente reformular sua pergunta.';
-        return res.json({ reply, modelUsed, mode });
-      } catch (err) {
-        const message = err instanceof Error ? err.message : 'Erro ao consultar o assistente IA.';
-        console.error('[AI Chat Error]:', message);
-        return res.status(500).json({ error: message });
-      }
-    }
-  );
-
-  app.post(
-    '/api/ai/horizon-insight',
-    createAuthAndRateLimitMiddleware('ai-horizon', 15, 60_000),
-    async (req, res) => {
-      try {
-        const horizonSummary =
-          typeof req.body?.horizonSummary === 'string'
-            ? req.body.horizonSummary.trim().slice(0, MAX_HORIZON_SUMMARY_CHARS)
-            : '';
-        const contextSummary =
-          typeof req.body?.contextSummary === 'string'
-            ? req.body.contextSummary.slice(0, MAX_CONTEXT_SUMMARY_CHARS)
-            : '';
-        if (!horizonSummary) {
-          return res.status(400).json({ error: 'Resumo do horizonte ausente.' });
-        }
-
-        const ai = getGenAIClient();
-        const modelUsed = 'gemini-4-hydrogen';
-        const response = await ai.models.generateContent({
-          model: modelUsed,
-          contents: [
-            {
-              role: 'user',
-              parts: [
-                {
-                  text: `Explique com palavras bem simples este cenário de gastos do usuário em até 4 pontos curtos (quanto tira da renda por mês, quanto ainda sobra ou falta, quando as parcelas acabam e uma dica prática):\n\n${horizonSummary}`,
-                },
-              ],
-            },
-          ],
-          config: {
-            systemInstruction: buildFinancialSystemInstruction(contextSummary, 'deep'),
-          },
-        });
-
-        const insight = response.text?.trim() || 'Não foi possível gerar a análise do horizonte.';
-        return res.json({ insight, modelUsed });
-      } catch (err) {
-        const message = err instanceof Error ? err.message : 'Erro ao analisar horizonte com IA.';
-        console.error('[AI Horizon Insight Error]:', message);
-        return res.status(500).json({ error: message });
-      }
-    }
-  );
-
   const server = http.createServer(app);
-  const wss = new WebSocketServer({
-    noServer: true,
-    maxPayload: MAX_WS_PAYLOAD_BYTES,
-  });
 
   if (!IS_PROD) {
     const { createServer: createViteServer } = await import('vite');
@@ -562,254 +370,50 @@ async function startServer() {
   } else {
     const distDir = path.resolve(__dirname, 'dist');
     if (fs.existsSync(distDir)) {
-      app.use(express.static(distDir));
+      app.use(
+        express.static(distDir, {
+          setHeaders: (res, filePath) => {
+            const base = path.basename(filePath);
+            if (base === 'sw.js') {
+              res.setHeader('Cache-Control', 'no-cache, max-age=0, must-revalidate');
+              res.setHeader('Service-Worker-Allowed', '/');
+            } else if (base === 'manifest.webmanifest') {
+              res.setHeader('Content-Type', 'application/manifest+json; charset=utf-8');
+              res.setHeader('Cache-Control', 'no-cache, max-age=0, must-revalidate');
+            } else if (base === 'index.html' || base === 'registerSW.js') {
+              res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+            }
+          },
+        })
+      );
       app.get('*', (_req, res) => {
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
         res.sendFile(path.join(distDir, 'index.html'));
       });
     }
   }
 
-  const activeWsByUid = new Map<string, number>();
-
-  server.on('upgrade', async (request, socket, head) => {
-    const rawUrl = request.url || '';
-    const urlPath = rawUrl.split('?')[0];
-    if (urlPath !== '/api/ai/live') {
+  app.use((err: unknown, req: Request, res: Response, _next: NextFunction) => {
+    const status =
+      typeof err === 'object' && err !== null && 'statusCode' in err && typeof (err as { statusCode?: unknown }).statusCode === 'number'
+        ? (err as { statusCode: number }).statusCode
+        : typeof err === 'object' && err !== null && 'status' in err && typeof (err as { status?: unknown }).status === 'number'
+          ? (err as { status: number }).status
+          : 500;
+    const message =
+      err instanceof SyntaxError && status === 400
+        ? 'Corpo da requisição inválido.'
+        : err instanceof Error && status < 500
+          ? err.message
+          : 'Erro interno temporário. Tente novamente.';
+    console.error(`[API Error] ${req.method} ${req.originalUrl}:`, err);
+    if (res.headersSent) return;
+    if (req.path.startsWith('/api/')) {
+      res.status(status).json({ error: message });
       return;
     }
-
-    const ip = getClientIp(request);
-    if (!checkRateLimit(`ws:ip:${ip}`, 20, 60_000)) {
-      socket.write('HTTP/1.1 429 Too Many Requests\r\n\r\n');
-      socket.destroy();
-      return;
-    }
-
-    let upgradeCaller: VerifiedCaller | null = null;
-    try {
-      const parsedUrl = new URL(rawUrl, 'http://localhost');
-      const queryToken = parsedUrl.searchParams.get('token');
-      const authHeader = request.headers.authorization;
-      const bearerToken =
-        typeof authHeader === 'string' ? authHeader.match(/^Bearer\s+(.+)$/i)?.[1] ?? null : null;
-      const candidateToken = queryToken || bearerToken;
-      if (candidateToken) {
-        upgradeCaller = await verifyFirebaseIdToken(candidateToken);
-      }
-    } catch {
-      socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
-      socket.destroy();
-      return;
-    }
-
-    wss.handleUpgrade(request, socket, head, (ws) => {
-      wss.emit('connection', ws, request, upgradeCaller);
-    });
+    res.status(status).send('Erro temporário ao processar solicitação.');
   });
-
-  wss.on(
-    'connection',
-    (clientWs: WebSocket, request: http.IncomingMessage, preVerifiedCaller?: VerifiedCaller | null) => {
-      let liveSession: Awaited<ReturnType<GoogleGenAI['live']['connect']>> | null = null;
-      let verifiedCaller: VerifiedCaller | null = preVerifiedCaller ?? null;
-      let sessionSlotAcquired = false;
-      let isClosed = false;
-      let connecting = false;
-
-      const sendSafe = (payload: unknown) => {
-        if (!isClosed && clientWs.readyState === WebSocket.OPEN) {
-          clientWs.send(JSON.stringify(payload));
-        }
-      };
-
-      const releaseSessionSlot = () => {
-        if (sessionSlotAcquired && verifiedCaller) {
-          const current = activeWsByUid.get(verifiedCaller.uid) ?? 0;
-          if (current <= 1) {
-            activeWsByUid.delete(verifiedCaller.uid);
-          } else {
-            activeWsByUid.set(verifiedCaller.uid, current - 1);
-          }
-          sessionSlotAcquired = false;
-        }
-      };
-
-      const acquireSessionSlot = (caller: VerifiedCaller): boolean => {
-        if (sessionSlotAcquired) return true;
-        if (!checkRateLimit(`ws:uid:${caller.uid}`, 10, 60_000)) {
-          sendSafe({ error: 'Limite de conexões de voz atingido. Aguarde 1 minuto.' });
-          clientWs.close(4008, 'Rate limit exceeded');
-          return false;
-        }
-        const current = activeWsByUid.get(caller.uid) ?? 0;
-        if (current >= MAX_WS_CONCURRENT_PER_USER) {
-          sendSafe({ error: 'Limite de sessões de voz simultâneas atingido.' });
-          clientWs.close(4008, 'Concurrent session limit exceeded');
-          return false;
-        }
-        activeWsByUid.set(caller.uid, current + 1);
-        sessionSlotAcquired = true;
-        return true;
-      };
-
-      if (verifiedCaller && !acquireSessionSlot(verifiedCaller)) {
-        return;
-      }
-
-      const authTimer = verifiedCaller
-        ? null
-        : setTimeout(() => {
-            if (!verifiedCaller && !isClosed) {
-              sendSafe({ error: 'Autenticação Firebase obrigatória.' });
-              clientWs.close(4001, 'Authentication timeout');
-            }
-          }, WS_AUTH_TIMEOUT_MS);
-
-      const lifetimeTimer = setTimeout(() => {
-        if (!isClosed) {
-          sendSafe({ status: 'closed', error: 'Sessão de voz encerrada após o limite de 5 minutos.' });
-          clientWs.close(1000, 'Session lifetime limit');
-        }
-      }, MAX_WS_SESSION_MS);
-
-      const startLiveSession = async (contextSummary = '') => {
-        if (connecting || liveSession || isClosed || !verifiedCaller) return;
-        connecting = true;
-        try {
-          const ai = getGenAIClient();
-          liveSession = await ai.live.connect({
-            model: 'gemini-3.8-live',
-            config: {
-              responseModalities: [Modality.AUDIO],
-              speechConfig: {
-                voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Zephyr' } },
-              },
-              inputAudioTranscription: {},
-              outputAudioTranscription: {},
-              systemInstruction:
-                buildFinancialSystemInstruction(contextSummary, 'fast') +
-                ' Como é uma conversa falada ao vivo, responda com 2 ou 3 frases bem simples e diretas dizendo quanto tira da renda e quanto fica.',
-            },
-            callbacks: {
-              onmessage: (message: LiveServerMessage) => {
-                const content = message.serverContent;
-                if (content?.inputTranscription?.text) {
-                  sendSafe({ inputTranscript: content.inputTranscription.text });
-                }
-                if (content?.outputTranscription?.text) {
-                  sendSafe({ outputTranscript: content.outputTranscription.text });
-                }
-                for (const part of content?.modelTurn?.parts ?? []) {
-                  if (part.inlineData?.data) {
-                    sendSafe({ audio: part.inlineData.data });
-                  }
-                }
-                if (content?.interrupted) {
-                  sendSafe({ interrupted: true });
-                }
-                if (content?.turnComplete) {
-                  sendSafe({ turnComplete: true });
-                }
-              },
-              onerror: (err) => {
-                console.error('[Gemini Live Session Error]:', err);
-                sendSafe({ error: 'Falha na sessão de voz em tempo real.' });
-              },
-              onclose: () => {
-                sendSafe({ status: 'closed' });
-              },
-            },
-          });
-          sendSafe({ status: 'ready' });
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : 'Não foi possível iniciar a conversa por voz.';
-          console.error('[Gemini Live Connect Error]:', msg);
-          sendSafe({ error: msg });
-        } finally {
-          connecting = false;
-        }
-      };
-
-      clientWs.on('message', async (rawData) => {
-        try {
-          const rawText = rawData.toString();
-          if (rawText.length > MAX_WS_PAYLOAD_BYTES) {
-            sendSafe({ error: 'Mensagem excede o tamanho máximo permitido.' });
-            return;
-          }
-          const parsed = JSON.parse(rawText) as {
-            type?: string;
-            token?: string;
-            contextSummary?: string;
-            audio?: string;
-            text?: string;
-          };
-
-          if (!verifiedCaller) {
-            if (parsed.type === 'init' && typeof parsed.token === 'string') {
-              try {
-                verifiedCaller = await verifyFirebaseIdToken(parsed.token);
-                if (authTimer) clearTimeout(authTimer);
-                if (!acquireSessionSlot(verifiedCaller)) {
-                  return;
-                }
-              } catch (authErr) {
-                const msg = authErr instanceof Error ? authErr.message : 'Autenticação inválida.';
-                sendSafe({ error: msg });
-                clientWs.close(4001, 'Unauthorized');
-                return;
-              }
-            } else {
-              sendSafe({ error: 'Autenticação Firebase obrigatória antes do envio.' });
-              clientWs.close(4001, 'Unauthorized');
-              return;
-            }
-          }
-
-          if (parsed.type === 'init') {
-            await startLiveSession(
-              typeof parsed.contextSummary === 'string' ? parsed.contextSummary : ''
-            );
-            return;
-          }
-
-          if (!liveSession && !connecting) {
-            await startLiveSession(
-              typeof parsed.contextSummary === 'string' ? parsed.contextSummary : ''
-            );
-          }
-
-          if (liveSession && typeof parsed.audio === 'string' && parsed.audio.length <= 196608) {
-            liveSession.sendRealtimeInput({
-              audio: { data: parsed.audio, mimeType: 'audio/pcm;rate=16000' },
-            });
-          } else if (liveSession && typeof parsed.text === 'string' && parsed.text.trim()) {
-            liveSession.sendRealtimeInput({
-              text: parsed.text.trim().slice(0, 2000),
-            });
-          }
-        } catch (err) {
-          console.error('[Live WS Message Error]:', err, 'from', getClientIp(request));
-        }
-      });
-
-      const cleanup = () => {
-        isClosed = true;
-        if (authTimer) clearTimeout(authTimer);
-        clearTimeout(lifetimeTimer);
-        releaseSessionSlot();
-        try {
-          liveSession?.close();
-        } catch {
-          // ignore close cleanup errors
-        }
-        liveSession = null;
-      };
-
-      clientWs.on('close', cleanup);
-      clientWs.on('error', cleanup);
-    }
-  );
 
   server.listen(PORT, '0.0.0.0', () => {
     console.log(`DuoFin server running on http://0.0.0.0:${PORT}`);
@@ -823,6 +427,13 @@ const isEntrypoint =
   path.resolve(process.argv[1]) === path.resolve(__filename);
 
 if (isEntrypoint) {
+  process.on('unhandledRejection', (reason) => {
+    console.error('[Process unhandledRejection]:', reason);
+  });
+  process.on('uncaughtException', (err) => {
+    console.error('[Process uncaughtException]:', err);
+  });
+
   startServer().catch((err) => {
     console.error('Failed to start server:', err);
     process.exit(1);

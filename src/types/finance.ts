@@ -3,7 +3,6 @@ export type AppRoute =
   | 'lancamentos'
   | 'lembretes'
   | 'horizonte'
-  | 'ia'
   | 'fixos'
   | 'renda'
   | 'cartoes'
@@ -14,6 +13,10 @@ export type AppRoute =
   | 'relatorios'
   | 'config';
 
+export type CardsAccountsTab = 'cartoes' | 'contas' | 'fixos';
+export type ReportsHubTab = 'resumo' | 'renda';
+export type ProfileHubTab = 'lembretes' | 'notificacoes' | 'membros' | 'configuracoes' | 'dados';
+
 export type TransactionType = 'Entrada' | 'Saída' | 'Economia' | 'Transferência';
 export type TransactionStatus = 'Pago' | 'Pendente';
 export type IncomeFrequency = 'Mensal' | 'Quinzenal' | 'Semanal' | 'Única' | 'Anual';
@@ -21,9 +24,9 @@ export type RecurringFrequency = 'Mensal' | 'Quinzenal' | 'Semanal' | 'Anual';
 export type RecurringType = 'Entrada' | 'Saída';
 export type GoalMovementType = 'Depósito' | 'Retirada';
 export type PlannedPurchaseStatus = 'Pendente' | 'Pesquisando' | 'Comprado' | 'Cancelado';
+export type PlannedPurchaseKind = 'compra' | 'projeto';
 export type ScenarioMode = 'De uma vez' | 'Gradual em 12 meses';
 export type SimulatedPurchaseMode = 'avista' | 'parcelado' | 'fixo';
-export type AiChatMode = 'fast' | 'general' | 'deep';
 export type BankAccountType = 'Corrente' | 'Poupança' | 'Carteira' | 'Investimento' | 'Outro';
 
 export interface BankAccount extends AuditFields {
@@ -51,17 +54,6 @@ export interface SimulatedPurchase {
   enabled: boolean;
 }
 
-export interface AiChatMessage {
-  id: string;
-  role: 'user' | 'model';
-  text: string;
-  mode: AiChatMode;
-  modelUsed: string;
-  createdByUid: string;
-  createdByName: string;
-  createdAt?: unknown;
-}
-
 export interface UserProfile {
   uid: string;
   email: string;
@@ -84,6 +76,9 @@ export interface Household {
   partner2Name: string;
   periodStart: string; // YYYY-MM-01
   categories: string[];
+  expenseCategories?: string[];
+  incomeCategories?: string[];
+  categoryIcons?: Record<string, string>;
   paymentMethods: string[];
   rooms: string[];
   accounts: string[];
@@ -334,6 +329,7 @@ export interface GoalMovement {
 export interface PlannedPurchase extends AuditFields {
   id: string;
   priority: number; // 0..10
+  itemKind?: PlannedPurchaseKind;
   room: string;
   projectCategory?: string;
   iconName?: string;

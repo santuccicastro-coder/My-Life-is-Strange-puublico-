@@ -203,7 +203,7 @@ export function HomeCalendarModal({
           if (e.target === e.currentTarget) onClose();
         }}
       >
-        <div className="duofin-dialog-enter w-full sm:max-w-4xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl sm:rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[84dvh]">
+        <div className="duofin-dialog-enter w-full md:max-w-3xl lg:max-w-5xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl sm:rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[86dvh]">
 
         {/* Cabeçalho do Calendário */}
         <div className="px-4 sm:px-6 pt-3 pb-3 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2">
@@ -241,7 +241,7 @@ export function HomeCalendarModal({
         </div>
 
         {/* Seletor de painel no Mobile (Calendário vs Agenda) */}
-        <div className="px-4 pt-3 lg:hidden">
+        <div className="px-4 pt-3 md:hidden">
           <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-slate-100 dark:bg-slate-800">
             <button
               type="button"
@@ -269,12 +269,12 @@ export function HomeCalendarModal({
         </div>
 
         {/* Corpo em 2 painéis inspirados na referência: Esquerda (Calendário + Próximo Mês) / Direita (Agenda Cronológica) */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6">
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-5 lg:p-6">
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-5 lg:gap-6 items-start">
             {/* PAINEL ESQUERDO: Grade Mensal + Prévia do Próximo Mês */}
             <div
-              className={`lg:col-span-5 flex flex-col justify-between space-y-5 lg:border-r lg:border-slate-100 dark:lg:border-slate-800 lg:pr-6 ${
-                mobilePane === 'calendario' ? 'block' : 'hidden lg:block'
+              className={`md:col-span-5 flex flex-col justify-between space-y-5 md:border-r md:border-slate-100 dark:md:border-slate-800 md:pr-5 lg:pr-6 ${
+                mobilePane === 'calendario' ? 'block' : 'hidden md:block'
               }`}
             >
               {/* Navegação de Mês */}
@@ -315,7 +315,7 @@ export function HomeCalendarModal({
 
                 <div className="grid grid-cols-7 gap-y-1.5 place-items-center">
                   {Array.from({ length: calendarData.leadingEmptyDays }).map((_, i) => (
-                    <div key={`empty-${i}`} className="w-10 h-10" />
+                    <div key={`empty-${i}`} className="w-9 h-9 md:w-10 md:h-10 lg:w-11 lg:h-11" />
                   ))}
 
                   {Array.from({ length: calendarData.daysInMonth }, (_, i) => {
@@ -334,7 +334,7 @@ export function HomeCalendarModal({
                         aria-label={`Dia ${day} de ${formatMonthFull(selectedMonth)}${
                           summary?.events.length ? `, ${summary.events.length} evento(s)` : ''
                         }`}
-                        className={`w-10 h-10 sm:w-11 sm:h-11 rounded-full flex items-center justify-center text-xs sm:text-sm font-mono tabular-nums transition-all cursor-pointer ${getDayCircleClass(
+                        className={`w-9 h-9 md:w-10 md:h-10 lg:w-11 lg:h-11 rounded-full flex items-center justify-center text-xs sm:text-sm font-mono tabular-nums transition-all cursor-pointer ${getDayCircleClass(
                           tone,
                           isSelected,
                           isToday
@@ -365,7 +365,7 @@ export function HomeCalendarModal({
 
               {/* Resumo rápido do dia selecionado no mobile */}
               {selectedDaySummary && (
-                <div className="duofin-expand-enter lg:hidden bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 rounded-2xl p-3 flex items-center justify-between gap-2">
+                <div className="duofin-expand-enter md:hidden bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 rounded-2xl p-3 flex items-center justify-between gap-2">
                   <div className="min-w-0">
                     <p className="text-xs font-bold text-slate-900 dark:text-slate-100">
                       Dia {selectedDaySummary.day} ({selectedDaySummary.weekdayShort})
@@ -452,8 +452,8 @@ export function HomeCalendarModal({
 
             {/* PAINEL DIREITO: Agenda Cronológica por Dia */}
             <div
-              className={`lg:col-span-7 flex flex-col space-y-4 ${
-                mobilePane === 'agenda' ? 'block' : 'hidden lg:block'
+              className={`md:col-span-7 flex flex-col space-y-4 ${
+                mobilePane === 'agenda' ? 'block' : 'hidden md:block'
               }`}
             >
               {/* Resumo de Entradas vs Saídas + Filtro de Dia */}
@@ -586,7 +586,7 @@ export function HomeCalendarModal({
               )}
 
               {/* Botão circular "+" no mobile dentro do painel de agenda */}
-              <div className="lg:hidden flex justify-center pt-2">
+              <div className="md:hidden flex justify-center pt-2">
                 <button
                   type="button"
                   onClick={() => {

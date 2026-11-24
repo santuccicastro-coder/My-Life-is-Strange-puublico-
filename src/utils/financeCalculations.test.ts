@@ -57,6 +57,15 @@ import type {
   SimulatedPurchase,
   Transaction,
 } from '../types/finance.ts';
+import {
+  DEFAULT_CATEGORY_ICONS,
+  DEFAULT_EXPENSE_CATEGORIES,
+  DEFAULT_INCOME_CATEGORIES,
+  classifyIncomeSourceToCategory,
+  resolveHouseholdExpenseCategories,
+  resolveHouseholdIncomeCategories,
+  resolvePlannedPurchaseKind,
+} from './validation.ts';
 
 const audit = {
   createdByUid: 'u1',
@@ -3013,4 +3022,85 @@ describe('Prompt 3 & Prompt 4 — Credit Hub & Free Money Projection Engine', ()
     assert.equal(portfolio.activeProjectsCount, 2);
     assert.equal(portfolio.committedPatrimonyPct, 85);
   });
+
+  it('separates expense vs income categories, classifies income sources, and distinguishes Compras from Projetos', () => {
+    assert.ok(DEFAULT_EXPENSE_CATEGORIES.includes('Moradia'));
+    assert.ok(DEFAULT_EXPENSE_CATEGORIES.includes('Impostos'));
+    assert.ok(!DEFAULT_EXPENSE_CATEGORIES.includes('Trabalho CLT'));
+
+    assert.ok(DEFAULT_INCOME_CATEGORIES.includes('Trabalho CLT'));
+    assert.ok(DEFAULT_INCOME_CATEGORIES.includes('Rendimentos de investimentos'));
+    assert.ok(!DEFAULT_INCOME_CATEGORIES.includes('Alimentação'));
+    assert.equal(DEFAULT_CATEGORY_ICONS['Trabalho CLT'], 'Briefcase');
+
+    const legacyHousehold: Household = {
+      id: 'h-legacy',
+      name: 'Casa',
+      ownerUid: 'u1',
+      partner1Uid: 'u1',
+      partner2Uid: 'u1',
+      partner1Name: 'Ana',
+      partner2Name: 'Ana',
+      memberUids: ['u1'],
+      periodStart: '2026-01-01',
+      categories: ['Moradia', 'Pet', 'Salário', 'Mesada'],
+      paymentMethods: ['Pix'],
+      rooms: ['Casa'],
+      accounts: ['Banco'],
+      lastInviteCode: '',
+    };
+
+    const resolvedExp = resolveHouseholdExpenseCategories(legacyHousehold);
+    const resolvedInc = resolveHouseholdIncomeCategories(legacyHousehold);
+    assert.ok(resolvedExp.includes('Pet'));
+    assert.ok(!resolvedExp.includes('Salário'));
+    assert.ok(!resolvedExp.includes('Mesada'));
+    assert.ok(resolvedInc.includes('Trabalho CLT'));
+    assert.ok(resolvedInc.includes('Mesada'));
+
+    assert.equal(classifyIncomeSourceToCategory('Salário empresa CLT'), 'Trabalho CLT');
+    assert.equal(classifyIncomeSourceToCategory('Freelance design'), 'Freelance');
+    assert.equal(classifyIncomeSourceToCategory('Dividendos FIIs'), 'Rendimentos de investimentos');
+    assert.equal(classifyIncomeSourceToCategory('Vale alimentação benefício'), 'Benefícios');
+    assert.equal(classifyIncomeSourceToCategory('Reembolso viagem'), 'Reembolsos');
+    assert.equal(classifyIncomeSourceToCategory('Mesada mensal'), 'Mesada');
+    assert.equal(classifyIncomeSourceToCategory('Consultoria autônomo'), 'Trabalho autônomo');
+
+    const inferredPurchase: PlannedPurchase = {
+      id: 'pp-1',
+      priority: 5,
+      room: 'Eletrônicos',
+      projectCategory: 'Celular',
+      product: 'Smartphone',
+      brandModel: '',
+      specs: '',
+      quantity: 1,
+      estimatedUnitPrice: 3500,
+      actualUnitPrice: 0,
+      hasActualPrice: false,
+      status: 'Pendente',
+      targetDate: '',
+      purchaseDate: '',
+      paymentMethod: 'Pix',
+      notes: '',
+      ...audit,
+    };
+    const inferredProject: PlannedPurchase = {
+      ...inferredPurchase,
+      id: 'pp-2',
+      room: 'Casa',
+      projectCategory: 'Casa',
+      product: 'Reforma da cozinha',
+    };
+    const explicitOverride: PlannedPurchase = {
+      ...inferredProject,
+      id: 'pp-3',
+      itemKind: 'compra',
+    };
+
+    assert.equal(resolvePlannedPurchaseKind(inferredPurchase), 'compra');
+    assert.equal(resolvePlannedPurchaseKind(inferredProject), 'projeto');
+    assert.equal(resolvePlannedPurchaseKind(explicitOverride), 'compra');
+  });
 });
+

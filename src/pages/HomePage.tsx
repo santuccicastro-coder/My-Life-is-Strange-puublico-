@@ -12,11 +12,13 @@ import {
   Circle,
   Eye,
   EyeOff,
+  History,
   Landmark,
   PiggyBank,
   Plus,
   RefreshCw,
-  Sparkles,
+  Star,
+  TrendingUp,
   Wallet,
 } from 'lucide-react';
 import {
@@ -69,6 +71,7 @@ const HIDE_BALANCE_STORAGE_KEY = 'duofin_hide_balances';
 
 export function HomePage({ onNavigate, onQuickAdd, onEditTransaction }: HomePageProps) {
   const {
+    household,
     transactions,
     recurringItems,
     incomes,
@@ -342,35 +345,35 @@ export function HomePage({ onNavigate, onQuickAdd, onEditTransaction }: HomePage
   }
 
   return (
-    <div className="space-y-6 pb-6">
-      {/* Bloco Principal: Cabeçalho Bancário Slate-Esmeralda + Tabs de 3 Meses + Saldo Total */}
-      <section className="space-y-3">
-        <div className="bg-slate-900 text-white rounded-2xl p-5 sm:p-6 border border-slate-800 shadow-sm">
-          {/* Topo do Hero: Calculadora rápida à esquerda, Navegador 3 meses ao centro, Calendário visual à direita */}
-          <div className="flex items-center justify-between gap-2 pb-5">
+    <div className="space-y-5 sm:space-y-6 pb-6">
+      {/* Bloco Principal: Cartão Escuro de Saldo do Mês + Atalhos Passado / Agora / Futuro */}
+      <section className="space-y-3.5">
+        <div className="bg-slate-900 dark:bg-slate-900 border border-slate-800 text-white rounded-3xl p-4 sm:p-6 shadow-md flex flex-col justify-between min-w-0">
+          {/* Topo do Hero: Calculadora rápida, 3 meses e Calendário */}
+          <div className="flex items-center justify-between gap-2 pb-3 sm:pb-4 border-b border-white/10">
             <button
               type="button"
               onClick={() => setCalculatorOpen(true)}
               aria-label="Calculadora econômica rápida"
               title="Calculadora econômica rápida"
-              className="min-w-[44px] min-h-[44px] -ml-2 flex items-center justify-center rounded-xl text-slate-300 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+              className="w-9 h-9 sm:w-10 sm:h-10 -ml-1 flex items-center justify-center rounded-xl text-slate-300 hover:text-white hover:bg-white/10 transition-colors cursor-pointer shrink-0"
             >
-              <Calculator className="w-5 h-5" />
+              <Calculator className="w-4.5 h-4.5 sm:w-5 sm:h-5" />
             </button>
 
-            <div className="flex items-center gap-4 sm:gap-6">
+            <div className="flex items-center gap-3 sm:gap-6 min-w-0">
               {threeMonthTabs.map((tab) => (
                 <button
                   key={tab.key}
                   type="button"
                   onClick={() => setSelectedMonth(tab.key)}
-                  className={`relative py-2 px-1.5 text-sm transition-colors cursor-pointer whitespace-nowrap ${
-                    tab.active ? 'font-bold text-white' : 'font-medium text-slate-400 hover:text-slate-200'
+                  className={`relative py-1 px-1 text-xs sm:text-sm transition-colors cursor-pointer whitespace-nowrap ${
+                    tab.active ? 'font-bold text-white' : 'font-medium text-slate-400 hover:text-white'
                   }`}
                 >
                   {tab.label}
                   {tab.active && (
-                    <span className="absolute inset-x-1 bottom-0 h-0.5 rounded-full bg-emerald-400" />
+                    <span className="absolute inset-x-0.5 bottom-0 h-0.5 rounded-full bg-emerald-400" />
                   )}
                 </button>
               ))}
@@ -381,111 +384,165 @@ export function HomePage({ onNavigate, onQuickAdd, onEditTransaction }: HomePage
               onClick={() => setCalendarOpen(true)}
               aria-label="Abrir calendário financeiro"
               title="Calendário financeiro e agenda do mês"
-              className="min-w-[44px] min-h-[44px] -mr-2 flex items-center justify-center rounded-xl text-slate-300 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+              className="w-9 h-9 sm:w-10 sm:h-10 -mr-1 flex items-center justify-center rounded-xl text-slate-300 hover:text-white hover:bg-white/10 transition-colors cursor-pointer shrink-0"
             >
-              <Calendar className="w-5 h-5" />
+              <Calendar className="w-4.5 h-4.5 sm:w-5 sm:h-5" />
             </button>
           </div>
 
-          {/* Linha Saldo Total / Saldo Previsto + Olho + Detalhes > */}
-          <div className="flex items-end justify-between gap-4">
-            <div className="space-y-1 min-w-0">
-              <p className="text-xs font-medium text-slate-300">
-                {metrics.isFutureMonth
-                  ? `Saldo previsto · ${formatMonthFull(selectedMonth)}`
-                  : `Saldo total · ${formatMonthFull(selectedMonth)}`}
-              </p>
-              <div className="flex items-center gap-2.5 flex-wrap">
-                <span
-                  className={`text-3xl sm:text-4xl font-bold font-mono tabular-nums tracking-tight ${
-                    metrics.heroBalance < 0 ? 'text-red-300' : 'text-white'
-                  }`}
-                >
-                  {displayMoney(metrics.heroBalance)}
-                </span>
-                <button
-                  type="button"
-                  onClick={toggleHideBalances}
-                  aria-label={hideBalances ? 'Mostrar valores' : 'Ocultar valores'}
-                  className="min-w-[40px] min-h-[40px] flex items-center justify-center rounded-full text-slate-300 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
-                >
-                  {hideBalances ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                </button>
+          {/* Saldo Total / Previsto + Olho + Última atualização + Posso gastar/dia */}
+          <div className="pt-3.5 sm:pt-4 space-y-3 min-w-0">
+            <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-xs font-medium text-slate-300 truncate">
+                  {metrics.isFutureMonth
+                    ? `Saldo previsto · ${formatMonthFull(selectedMonth)}`
+                    : `Saldo total · ${formatMonthFull(selectedMonth)}`}
+                </p>
+                <div className="flex items-center gap-2 sm:gap-3 mt-0.5 flex-wrap">
+                  <span
+                    className={`text-2xl sm:text-4xl font-bold font-mono tabular-nums tracking-tight ${
+                      metrics.heroBalance < 0 ? 'text-red-400' : 'text-white'
+                    }`}
+                  >
+                    {displayMoney(metrics.heroBalance)}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={toggleHideBalances}
+                    aria-label={hideBalances ? 'Mostrar valores' : 'Ocultar valores'}
+                    className="w-8 h-8 flex items-center justify-center rounded-full text-slate-300 hover:text-white hover:bg-white/10 transition-colors cursor-pointer shrink-0"
+                  >
+                    {hideBalances ? <EyeOff className="w-4 h-4 sm:w-5 sm:h-5" /> : <Eye className="w-4 h-4 sm:w-5 sm:h-5" />}
+                  </button>
+                </div>
               </div>
-              {metrics.isFutureMonth ? (
-                <div className="flex items-center gap-2 pt-0.5">
-                  <span className="text-[11px] font-medium text-slate-300 font-mono tabular-nums">
-                    Entradas ({displayMoney(metrics.expectedEntriesTotal)}) − Faturas/Despesas (
-                    {displayMoney(metrics.expectedExpensesTotal)})
-                  </span>
-                </div>
-              ) : (
-                <div className="flex items-center gap-2 pt-0.5">
-                  <span className="text-[11px] font-medium text-slate-300 font-mono tabular-nums">
-                    {balanceUpdateLabel}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setLastBalanceConsultAt(new Date())}
-                    aria-label="Atualizar horário da consulta de saldo"
-                    title="Atualizar horário pelo sistema do celular"
-                    className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
-                  >
-                    <RefreshCw className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              )}
-              <p className="text-xs text-slate-300 pt-0.5">
-                Posso gastar/dia:{' '}
-                <strong
-                  className={`font-mono tabular-nums ${
-                    metrics.dailySafeSpend > 0 ? 'text-emerald-300' : 'text-red-300'
-                  }`}
-                >
-                  {displayMoney(metrics.dailySafeSpend)}
-                </strong>
-                {' · '}
-                {metrics.activeAccountsCount > 0 ? (
-                  <span>{metrics.activeAccountsCount} conta(s) ativa(s)</span>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => onNavigate('config')}
-                    className="underline text-emerald-300 hover:text-emerald-200 cursor-pointer"
-                  >
-                    Cadastrar saldos das contas
-                  </button>
-                )}
-              </p>
+
               {!metrics.isFutureMonth && (
                 <button
                   type="button"
                   onClick={() => setSelectedMonth(nextMonthKey)}
-                  className="mt-1.5 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-800/90 hover:bg-slate-800 border border-slate-700 text-[11px] font-medium text-slate-200 transition-colors cursor-pointer"
+                  className="inline-flex items-center justify-between sm:justify-end gap-2 px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/15 text-xs font-medium text-slate-200 transition-colors cursor-pointer shrink-0"
                 >
-                  <span>Próx. mês ({getMonthAbbr(nextMonthKey)}):</span>
-                  <strong
-                    className={`font-mono tabular-nums ${
-                      nextMonthMetrics.projectedMonthBalance < 0 ? 'text-red-300' : 'text-emerald-300'
-                    }`}
-                  >
-                    {displayMoney(nextMonthMetrics.projectedMonthBalance)}
-                  </strong>
-                  <span className="hidden xs:inline text-slate-400">· Salário − Despesas</span>
-                  <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+                  <span className="truncate">Próx. mês ({getMonthAbbr(nextMonthKey)})</span>
+                  <span className="inline-flex items-center gap-1 shrink-0">
+                    <strong
+                      className={`font-mono tabular-nums ${
+                        nextMonthMetrics.projectedMonthBalance < 0 ? 'text-red-300' : 'text-emerald-300'
+                      }`}
+                    >
+                      {displayMoney(nextMonthMetrics.projectedMonthBalance)}
+                    </strong>
+                    <ChevronRight className="w-3.5 h-3.5 text-slate-300" />
+                  </span>
                 </button>
               )}
             </div>
 
-            <button
-              type="button"
-              onClick={() => setShowBalanceDetails((v) => !v)}
-              className="min-h-[44px] inline-flex items-center gap-1 px-2.5 py-2 text-xs sm:text-sm font-semibold text-emerald-300 hover:text-emerald-200 rounded-xl hover:bg-slate-800/80 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-            >
-              Detalhes
-              <ChevronRight className={`w-4 h-4 transition-transform ${showBalanceDetails ? 'rotate-90' : ''}`} />
-            </button>
+            <div className="pt-2.5 border-t border-white/10 flex flex-wrap items-center justify-between gap-3">
+              <div className="min-w-0">
+                {metrics.isFutureMonth ? (
+                  <span className="text-[11px] font-medium text-slate-300 font-mono tabular-nums truncate">
+                    Entradas ({displayMoney(metrics.expectedEntriesTotal)}) − Gastos ({displayMoney(metrics.expectedExpensesTotal)})
+                  </span>
+                ) : (
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div className="min-w-0">
+                      <p className="text-[10px] text-slate-400">Última atualização</p>
+                      <p className="text-[11px] font-medium text-slate-200 font-mono tabular-nums truncate">
+                        {balanceUpdateLabel}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setLastBalanceConsultAt(new Date())}
+                      aria-label="Atualizar horário da consulta de saldo"
+                      title="Atualizar horário pelo sistema do celular"
+                      className="p-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-white/10 transition-colors cursor-pointer shrink-0"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex items-center gap-3 shrink-0">
+                <div className="text-right">
+                  <p className="text-[10px] sm:text-[11px] text-slate-300">Posso gastar/dia</p>
+                  <p
+                    className={`text-xs sm:text-sm font-bold font-mono tabular-nums ${
+                      metrics.dailySafeSpend > 0 ? 'text-emerald-400' : 'text-red-300'
+                    }`}
+                  >
+                    {displayMoney(metrics.dailySafeSpend)}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowBalanceDetails((v) => !v)}
+                  className="min-h-[36px] inline-flex items-center gap-0.5 px-2.5 py-1 text-xs font-semibold text-emerald-300 hover:text-emerald-200 rounded-xl bg-white/10 hover:bg-white/15 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+                >
+                  Detalhes
+                  <ChevronRight className={`w-3.5 h-3.5 transition-transform ${showBalanceDetails ? 'rotate-90' : ''}`} />
+                </button>
+              </div>
+            </div>
           </div>
+        </div>
+
+        {/* Cartões de Acesso Rápido: Passado / Agora / Futuro */}
+        <div className="grid grid-cols-3 gap-2.5 sm:gap-3">
+          <button
+            type="button"
+            onClick={() => onNavigate('relatorios')}
+            className="text-center rounded-2xl p-3 sm:p-4 bg-emerald-50 dark:bg-emerald-950/35 border border-emerald-200 dark:border-emerald-900/60 hover:brightness-95 transition-all cursor-pointer flex flex-col items-center justify-between gap-1.5"
+          >
+            <span className="w-9 h-9 rounded-full bg-white/80 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 flex items-center justify-center">
+              <History className="w-4.5 h-4.5" />
+            </span>
+            <div>
+              <p className="text-xs sm:text-sm font-bold text-slate-900 dark:text-emerald-100">Passado</p>
+              <p className="text-[10px] sm:text-[11px] font-medium text-emerald-700 dark:text-emerald-300 inline-flex items-center justify-center gap-0.5 mt-0.5 whitespace-nowrap">
+                Ver histórico
+                <ChevronRight className="w-3 h-3" />
+              </p>
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onNavigate('lancamentos')}
+            className="relative text-center rounded-2xl p-3 sm:p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs hover:bg-slate-50 dark:hover:bg-slate-800/70 transition-all cursor-pointer flex flex-col items-center justify-between gap-1.5"
+          >
+            <span className="w-9 h-9 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100 flex items-center justify-center">
+              <Calendar className="w-4.5 h-4.5" />
+            </span>
+            <div>
+              <p className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100">Agora</p>
+              <p className="text-[10px] sm:text-[11px] font-medium text-slate-500 dark:text-slate-400 inline-flex items-center justify-center gap-0.5 mt-0.5 whitespace-nowrap">
+                Seus lançamentos
+                <ChevronRight className="w-3 h-3" />
+              </p>
+            </div>
+            <span aria-hidden="true" className="w-9 h-1 rounded-full bg-slate-900 dark:bg-emerald-400 mt-0.5" />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onNavigate('horizonte')}
+            className="text-center rounded-2xl p-3 sm:p-4 bg-indigo-50 dark:bg-indigo-950/35 border border-indigo-200 dark:border-indigo-900/60 hover:brightness-95 transition-all cursor-pointer flex flex-col items-center justify-between gap-1.5"
+          >
+            <span className="w-9 h-9 rounded-full bg-white/80 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 flex items-center justify-center">
+              <TrendingUp className="w-4.5 h-4.5" />
+            </span>
+            <div>
+              <p className="text-xs sm:text-sm font-bold text-slate-900 dark:text-indigo-100">Futuro</p>
+              <p className="text-[10px] sm:text-[11px] font-medium text-indigo-700 dark:text-indigo-300 inline-flex items-center justify-center gap-0.5 mt-0.5 whitespace-nowrap">
+                Planejar gastos
+                <ChevronRight className="w-3 h-3" />
+              </p>
+            </div>
+          </button>
         </div>
 
         {/* Painel Expandível de Detalhes (Saldos por Conta, Diário, Faturas e Patrimônio) */}
@@ -709,73 +766,47 @@ export function HomePage({ onNavigate, onQuickAdd, onEditTransaction }: HomePage
           </div>
         </div>
 
-        {/* Faixa compacta de orçamento diário, faturas, sobra e previsão do próximo mês */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2.5">
-            <p className="text-[11px] text-slate-500 truncate">Posso gastar/dia</p>
-            <p
-              className={`text-sm font-bold font-mono tabular-nums mt-0.5 truncate ${
-                metrics.dailySafeSpend > 0 ? 'text-emerald-700' : 'text-red-600'
-              }`}
-            >
-              {displayMoney(metrics.dailySafeSpend)}
-            </p>
+        {/* Faixa 2 colunas: Saldo projetado / Sobra prevista + Faturas do mês */}
+        <div className="grid grid-cols-2 gap-3">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl px-4 py-3.5 flex items-center gap-3 shadow-xs">
+            <span className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 flex items-center justify-center shrink-0">
+              <Wallet className="w-4.5 h-4.5" />
+            </span>
+            <div className="min-w-0">
+              <p className="text-[11px] font-medium text-slate-500 truncate">
+                Saldo projetado
+              </p>
+              <p
+                className={`text-base sm:text-lg font-bold font-mono tabular-nums mt-0.5 truncate inline-flex items-center gap-1 ${
+                  (metrics.isFutureMonth ? metrics.projectedMonthBalance : metrics.monthlySurplus) >= 0
+                    ? 'text-emerald-700 dark:text-emerald-400'
+                    : 'text-red-600 dark:text-red-400'
+                }`}
+              >
+                {displayMoney(metrics.isFutureMonth ? metrics.projectedMonthBalance : metrics.monthlySurplus)}
+                <TrendingUp className="w-3.5 h-3.5 shrink-0" />
+              </p>
+            </div>
           </div>
+
           <button
             type="button"
             onClick={() => onNavigate('cartoes')}
-            className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2.5 text-left hover:bg-slate-50 transition-colors cursor-pointer"
+            className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl px-4 py-3.5 flex items-center justify-between gap-2 text-left hover:bg-slate-50 transition-colors cursor-pointer shadow-xs"
           >
-            <p className="text-[11px] text-slate-500 truncate">Faturas do mês</p>
-            <p className="text-sm font-bold font-mono tabular-nums text-amber-600 mt-0.5 truncate">
-              {displayMoney(monthSummary.invoicesTotal)}
-            </p>
+            <div className="flex items-center gap-3 min-w-0">
+              <span className="w-10 h-10 rounded-full bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                <Star className="w-4.5 h-4.5" />
+              </span>
+              <div className="min-w-0">
+                <p className="text-[11px] font-medium text-slate-500 truncate">Faturas do mês</p>
+                <p className="text-base sm:text-lg font-bold font-mono tabular-nums text-amber-600 dark:text-amber-400 mt-0.5 truncate">
+                  {displayMoney(monthSummary.invoicesTotal)}
+                </p>
+              </div>
+            </div>
+            <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />
           </button>
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2.5">
-            <p className="text-[11px] text-slate-500 truncate">
-              {metrics.isFutureMonth ? 'Saldo previsto' : 'Sobra prevista'}
-            </p>
-            <p
-              className={`text-sm font-bold font-mono tabular-nums mt-0.5 truncate ${
-                (metrics.isFutureMonth ? metrics.projectedMonthBalance : metrics.monthlySurplus) >= 0
-                  ? 'text-emerald-700'
-                  : 'text-red-600'
-              }`}
-            >
-              {displayMoney(metrics.isFutureMonth ? metrics.projectedMonthBalance : metrics.monthlySurplus)}
-            </p>
-          </div>
-          {!metrics.isFutureMonth ? (
-            <button
-              type="button"
-              onClick={() => setSelectedMonth(nextMonthKey)}
-              className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2.5 text-left hover:bg-slate-50 transition-colors cursor-pointer"
-            >
-              <p className="text-[11px] text-slate-500 truncate">Prev. {getMonthAbbr(nextMonthKey)}</p>
-              <p
-                className={`text-sm font-bold font-mono tabular-nums mt-0.5 truncate ${
-                  nextMonthMetrics.projectedMonthBalance >= 0 ? 'text-emerald-700' : 'text-red-600'
-                }`}
-              >
-                {displayMoney(nextMonthMetrics.projectedMonthBalance)}
-              </p>
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setSelectedMonth(currentMonthKey)}
-              className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2.5 text-left hover:bg-slate-50 transition-colors cursor-pointer"
-            >
-              <p className="text-[11px] text-slate-500 truncate">Saldo atual contas</p>
-              <p
-                className={`text-sm font-bold font-mono tabular-nums mt-0.5 truncate ${
-                  metrics.totalAccountsBalance >= 0 ? 'text-slate-900 dark:text-slate-100' : 'text-red-600'
-                }`}
-              >
-                {displayMoney(metrics.totalAccountsBalance)}
-              </p>
-            </button>
-          )}
         </div>
       </section>
 
@@ -862,7 +893,7 @@ export function HomePage({ onNavigate, onQuickAdd, onEditTransaction }: HomePage
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex items-center gap-2.5 min-w-0">
-                    <CategoryBadgeIcon category={item.category} size="sm" />
+                    <CategoryBadgeIcon category={item.category} size="sm" customIcons={household?.categoryIcons} />
                     <div className="min-w-0">
                       <p className="text-sm font-semibold text-slate-900 dark:text-slate-100 truncate">{item.title}</p>
                       <p className="text-xs text-slate-500 truncate">
@@ -917,20 +948,20 @@ export function HomePage({ onNavigate, onQuickAdd, onEditTransaction }: HomePage
         )}
       </section>
 
-      {/* Grid Principal: Últimas transações + Infográfico Para onde foi o dinheiro */}
+      {/* Grid Principal: Últimos lançamentos + Infográfico Para onde foi o dinheiro */}
       <section className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Últimas transações */}
+        {/* Últimos lançamentos */}
         <div className="lg:col-span-6 min-w-0 space-y-3">
           <div className="flex items-center justify-between gap-2">
             <h2 className="text-lg font-bold tracking-tight text-slate-900 dark:text-slate-100">
-              Últimas transações
+              Últimos lançamentos
             </h2>
             <button
               type="button"
               onClick={() => onNavigate('lancamentos')}
               className="text-xs font-semibold text-slate-500 hover:text-slate-900 inline-flex items-center gap-1 cursor-pointer shrink-0"
             >
-              Ver todas
+              Ver todos
               <ChevronRight className="w-3.5 h-3.5" />
             </button>
           </div>
@@ -960,7 +991,7 @@ export function HomePage({ onNavigate, onQuickAdd, onEditTransaction }: HomePage
                     className="w-full min-h-[64px] px-4 py-3 flex items-center justify-between gap-3 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors text-left cursor-pointer"
                   >
                     <div className="flex items-center gap-3 min-w-0">
-                      <CategoryBadgeIcon category={tx.category} type={tx.type} size="md" />
+                      <CategoryBadgeIcon category={tx.category} type={tx.type} size="md" customIcons={household?.categoryIcons} />
                       <div className="min-w-0">
                         <p className="text-sm font-semibold text-slate-900 dark:text-slate-100 truncate">
                           {tx.description}
@@ -1096,7 +1127,7 @@ export function HomePage({ onNavigate, onQuickAdd, onEditTransaction }: HomePage
       </section>
 
       {/* Atalhos Rápidos dos Hubs Unificados */}
-      <section className="grid grid-cols-1 md:grid-cols-3 gap-3">
+      <section className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <button
           type="button"
           onClick={() => onNavigate('horizonte')}
@@ -1128,23 +1159,6 @@ export function HomePage({ onNavigate, onQuickAdd, onEditTransaction }: HomePage
               <p className="text-xs text-slate-500 truncate">
                 {displayMoney(monthSummary.totalPatrimony)} acumulado
               </p>
-            </div>
-          </div>
-          <ArrowRight className="w-4 h-4 text-slate-400 shrink-0" />
-        </button>
-
-        <button
-          type="button"
-          onClick={() => onNavigate('ia')}
-          className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 flex items-center justify-between gap-3 hover:bg-slate-50 transition-colors text-left cursor-pointer"
-        >
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="w-10 h-10 rounded-full bg-sky-100 dark:bg-sky-950/60 text-sky-700 dark:text-sky-400 flex items-center justify-center shrink-0">
-              <Sparkles className="w-5 h-5" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-sm font-semibold text-slate-900 dark:text-slate-100 truncate">Assistente IA e Voz</p>
-              <p className="text-xs text-slate-500 truncate">Análise inteligente e comandos</p>
             </div>
           </div>
           <ArrowRight className="w-4 h-4 text-slate-400 shrink-0" />
@@ -1253,7 +1267,7 @@ export function HomePage({ onNavigate, onQuickAdd, onEditTransaction }: HomePage
         type="button"
         onClick={onQuickAdd}
         aria-label="Novo lançamento"
-        className="lg:hidden fixed bottom-[calc(5rem+env(safe-area-inset-bottom))] right-4 w-14 h-14 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg flex items-center justify-center z-20 cursor-pointer active:scale-95 transition-transform"
+        className="md:hidden fixed bottom-[calc(5.75rem+env(safe-area-inset-bottom))] right-4 w-13 h-13 rounded-2xl bg-slate-900 hover:bg-slate-800 dark:bg-emerald-600 dark:hover:bg-emerald-500 text-white shadow-lg flex items-center justify-center z-20 cursor-pointer active:scale-95 transition-transform"
       >
         <Plus className="w-6 h-6" />
       </button>

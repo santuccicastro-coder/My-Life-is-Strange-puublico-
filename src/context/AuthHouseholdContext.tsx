@@ -27,9 +27,8 @@ import {
   where,
   writeBatch,
 } from 'firebase/firestore';
-import { auth, db, handleFirestoreError, OperationType } from '../firebase';
+import { auth, db, handleFirestoreError, isOfflineOrUnavailableError, OperationType } from '../firebase';
 import type {
-  AiChatMessage,
   BankAccount,
   CreditCard,
   Goal,
@@ -61,12 +60,17 @@ import {
 } from '../utils/offlineCache';
 import {
   assertValidId,
+  DEFAULT_CATEGORY_ICONS,
+  DEFAULT_EXPENSE_CATEGORIES,
+  DEFAULT_INCOME_CATEGORIES,
+  resolveHouseholdExpenseCategories,
+  resolveHouseholdIncomeCategories,
+  sanitizeCategoryIcons,
   sanitizeMemberNames,
   sanitizePaidInstallmentNumbers,
   sanitizePeriodStart,
   sanitizeStr,
   sanitizeStringArray,
-  validateAiMessageInput,
   validateBankAccountInput,
   validateCardInput,
   validateGoalInput,
@@ -99,7 +103,6 @@ interface AuthHouseholdContextValue {
   goalMovements: GoalMovement[];
   plannedPurchases: PlannedPurchase[];
   scenarios: Scenario[];
-  aiMessages: AiChatMessage[];
   bankAccounts: BankAccount[];
   currentPartnerName: string;
   currentAuthorName: string;
@@ -122,11 +125,22 @@ interface AuthHouseholdContextValue {
     memberNames?: Record<string, string>;
     periodStart: string;
     categories: string[];
+    expenseCategories?: string[];
+    incomeCategories?: string[];
+    categoryIcons?: Record<string, string>;
     paymentMethods: string[];
     rooms: string[];
     accounts: string[];
   }) => Promise<void>;
-  addHouseholdCategory: (categoryName: string) => Promise<string>;
+  addHouseholdCategory: (categoryName: string, group?: 'Saída' | 'Entrada', iconKey?: string) => Promise<string>;
+  updateHouseholdCategory: (
+    oldName: string,
+    newName: string,
+    group: 'Saída' | 'Entrada',
+    iconKey?: string
+  ) => Promise<string>;
+  deleteHouseholdCategory: (name: string, group: 'Saída' | 'Entrada') => Promise<void>;
+  setHouseholdCategoryIcon: (name: string, iconKey: string) => Promise<void>;
   createInviteCode: () => Promise<string>;
   deleteInviteCode: (code: string) => Promise<void>;
   removeMember: (memberUid: string) => Promise<void>;
@@ -222,9 +236,6 @@ interface AuthHouseholdContextValue {
   // Scenarios
   saveScenario: (input: Parameters<typeof validateScenarioInput>[0], existingId?: string) => Promise<void>;
   deleteScenario: (id: string) => Promise<void>;
-  // AI Chat Messages
-  addAiMessage: (input: Parameters<typeof validateAiMessageInput>[0]) => Promise<void>;
-  clearAiMessages: () => Promise<void>;
   // Bank Accounts
   saveBankAccount: (input: Parameters<typeof validateBankAccountInput>[0], existingId?: string) => Promise<void>;
   deleteBankAccount: (id: string) => Promise<void>;
@@ -232,19 +243,12 @@ interface AuthHouseholdContextValue {
 
 const AuthHouseholdContext = createContext<AuthHouseholdContextValue | null>(null);
 
-const DEFAULT_CATEGORIES = [
-  'Moradia',
-  'Contas fixas',
-  'Mercado',
-  'Diárias',
-  'Transporte',
-  'Saúde',
-  'Educação',
-  'Lazer',
-  'Compras da casa',
-  'Assinaturas',
-  'Outros',
-];
+const DEFAULT_CATEGORIES = sanitizeStringArray(
+  [...DEFAULT_EXPENSE_CATEGORIES, ...DEFAULT_INCOME_CATEGORIES],
+  60,
+  60,
+  'Outros'
+);
 
 const DEFAULT_PAYMENT_METHODS = ['Pix', 'Crédito', 'Débito', 'Dinheiro', 'Boleto', 'Transferência', 'Outro'];
 const DEFAULT_ROOMS = ['Sala', 'Cozinha', 'Quarto', 'Banheiro', 'Lavanderia', 'Escritório', 'Área externa', 'Outros'];
@@ -284,21 +288,25 @@ function mapAuthError(err: unknown): Error {
       ? String((err as { code?: unknown }).code ?? '')
       : '';
   switch (code) {
+    case 'auth/unauthorized-domain':
+      return new Error(
+        'Este domínio de acesso ainda não está autorizado no Firebase Authentication (Configurações → Domínios autorizados). Adicione o domínio atual no console do Firebase.'
+      );
     case 'auth/operation-not-allowed':
       return new Error(
-        'Este método de login ainda não foi ativado no Firebase Authentication. Verifique os provedores no console do Firebase.'
+        'O login com Google ainda não foi ativado no Firebase Authentication. Verifique os provedores no console do Firebase.'
       );
     case 'auth/popup-closed-by-user':
     case 'auth/cancelled-popup-request':
       return new Error('Login com Google cancelado antes de concluir.');
     case 'auth/popup-blocked':
       return new Error(
-        'O navegador bloqueou a janela do Google. No iPhone/Safari libere os pop-ups ou entre com usuário e senha.'
+        'O navegador bloqueou a janela do Google. No iPhone/Safari libere os pop-ups e tente novamente.'
       );
     case 'auth/operation-not-supported-in-this-environment':
     case 'auth/web-storage-unsupported':
       return new Error(
-        'Este modo de tela inicial ou navegador restringiu o pop-up do Google. Abra no Safari normal ou entre com usuário e senha.'
+        'Este modo de tela inicial ou navegador restringiu o pop-up do Google. Abra no Safari ou Chrome normal para entrar.'
       );
     case 'auth/invalid-credential':
     case 'auth/wrong-password':
@@ -411,7 +419,6 @@ export function AuthHouseholdProvider({ children }: { children: React.ReactNode 
   const [goalMovements, setGoalMovements] = useState<GoalMovement[]>([]);
   const [plannedPurchases, setPlannedPurchases] = useState<PlannedPurchase[]>([]);
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
-  const [aiMessages, setAiMessages] = useState<AiChatMessage[]>([]);
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
 
   if (asyncError) {
@@ -469,7 +476,6 @@ export function AuthHouseholdProvider({ children }: { children: React.ReactNode 
         if (cached.goalMovements?.length) nonEmptyKeys.add('goalMovements');
         if (cached.plannedPurchases?.length) nonEmptyKeys.add('plannedPurchases');
         if (cached.scenarios?.length) nonEmptyKeys.add('scenarios');
-        if (cached.aiMessages?.length) nonEmptyKeys.add('aiMessages');
 
         hydratedCacheInfoRef.current = {
           uid: nextUser.uid,
@@ -515,9 +521,6 @@ export function AuthHouseholdProvider({ children }: { children: React.ReactNode 
         }
         if (cached.scenarios?.length) {
           setScenarios((prev) => (prev.length ? prev : cached.scenarios));
-        }
-        if (cached.aiMessages?.length) {
-          setAiMessages((prev) => (prev.length ? prev : cached.aiMessages));
         }
 
         setIsUsingCachedData(true);
@@ -578,6 +581,21 @@ export function AuthHouseholdProvider({ children }: { children: React.ReactNode 
           setUserProfile(existing);
         }
       } catch (err) {
+        if (isOfflineOrUnavailableError(err) || (typeof navigator !== 'undefined' && !navigator.onLine)) {
+          console.warn('Perfil sincronizará assim que a conexão com o Firestore restabelecer.', err);
+          setUserProfile((prev) =>
+            prev && prev.uid === nextUser.uid
+              ? prev
+              : {
+                  uid: nextUser.uid,
+                  email: safeEmail,
+                  displayName: safeName,
+                  photoURL: safePhoto,
+                  activeHouseholdId: '',
+                }
+          );
+          return;
+        }
         try {
           handleFirestoreError(err, OperationType.GET, `users/${nextUser.uid}`);
         } catch (wrapped) {
@@ -644,6 +662,11 @@ export function AuthHouseholdProvider({ children }: { children: React.ReactNode 
         setHouseholdLoading(false);
       },
       (err) => {
+        if (isOfflineOrUnavailableError(err) || (typeof navigator !== 'undefined' && !navigator.onLine)) {
+          console.warn('Listener de grupo aguardando reconexão com o Firestore.', err);
+          setHouseholdLoading(false);
+          return;
+        }
         try {
           handleFirestoreError(err, OperationType.LIST, 'households');
         } catch (wrapped) {
@@ -669,6 +692,10 @@ export function AuthHouseholdProvider({ children }: { children: React.ReactNode 
         setInvites(list.filter((i) => i.householdId === household.id && !i.used));
       },
       (err) => {
+        if (isOfflineOrUnavailableError(err) || (typeof navigator !== 'undefined' && !navigator.onLine)) {
+          console.warn('Listener de convites aguardando reconexão com o Firestore.', err);
+          return;
+        }
         try {
           handleFirestoreError(err, OperationType.LIST, 'invites');
         } catch (wrapped) {
@@ -691,7 +718,6 @@ export function AuthHouseholdProvider({ children }: { children: React.ReactNode 
       setGoalMovements([]);
       setPlannedPurchases([]);
       setScenarios([]);
-      setAiMessages([]);
       setBankAccounts([]);
       setDataLoading(false);
       return;
@@ -707,7 +733,7 @@ export function AuthHouseholdProvider({ children }: { children: React.ReactNode 
     pendingSyncCollectionsRef.current.clear();
     setHasPendingSync(false);
     const hid = household.id;
-    let pendingInitial = 11;
+    let pendingInitial = 10;
     const markLoaded = () => {
       pendingInitial = Math.max(0, pendingInitial - 1);
       if (pendingInitial === 0) setDataLoading(false);
@@ -756,138 +782,79 @@ export function AuthHouseholdProvider({ children }: { children: React.ReactNode 
         ? window.setTimeout(() => setDataLoading(false), 1200)
         : null;
 
+    const makeCollectionErrorHandler = (path: string) => (err: unknown) => {
+      if (isOfflineOrUnavailableError(err) || (typeof navigator !== 'undefined' && !navigator.onLine)) {
+        console.warn(`Listener offline em ${path}; mantendo dados locais em cache.`, err);
+        setDataLoading(false);
+        return;
+      }
+      try {
+        handleFirestoreError(err, OperationType.LIST, path);
+      } catch (wrapped) {
+        setAsyncError(wrapped instanceof Error ? wrapped : new Error(String(wrapped)));
+      }
+    };
+
     const unsubs = [
       onSnapshot(
         query(collection(db, `households/${hid}/transactions`), orderBy('date', 'desc')),
         { includeMetadataChanges: true },
         (snap) => applyCollectionSnapshot('transactions', snap, setTransactions),
-        (err) => {
-          try {
-            handleFirestoreError(err, OperationType.LIST, `households/${hid}/transactions`);
-          } catch (wrapped) {
-            setAsyncError(wrapped instanceof Error ? wrapped : new Error(String(wrapped)));
-          }
-        }
+        makeCollectionErrorHandler(`households/${hid}/transactions`)
       ),
       onSnapshot(
         collection(db, `households/${hid}/recurringItems`),
         { includeMetadataChanges: true },
         (snap) => applyCollectionSnapshot('recurringItems', snap, setRecurringItems),
-        (err) => {
-          try {
-            handleFirestoreError(err, OperationType.LIST, `households/${hid}/recurringItems`);
-          } catch (wrapped) {
-            setAsyncError(wrapped instanceof Error ? wrapped : new Error(String(wrapped)));
-          }
-        }
+        makeCollectionErrorHandler(`households/${hid}/recurringItems`)
       ),
       onSnapshot(
         collection(db, `households/${hid}/incomes`),
         { includeMetadataChanges: true },
         (snap) => applyCollectionSnapshot('incomes', snap, setIncomes),
-        (err) => {
-          try {
-            handleFirestoreError(err, OperationType.LIST, `households/${hid}/incomes`);
-          } catch (wrapped) {
-            setAsyncError(wrapped instanceof Error ? wrapped : new Error(String(wrapped)));
-          }
-        }
+        makeCollectionErrorHandler(`households/${hid}/incomes`)
       ),
       onSnapshot(
         collection(db, `households/${hid}/cards`),
         { includeMetadataChanges: true },
         (snap) => applyCollectionSnapshot('cards', snap, setCards),
-        (err) => {
-          try {
-            handleFirestoreError(err, OperationType.LIST, `households/${hid}/cards`);
-          } catch (wrapped) {
-            setAsyncError(wrapped instanceof Error ? wrapped : new Error(String(wrapped)));
-          }
-        }
+        makeCollectionErrorHandler(`households/${hid}/cards`)
       ),
       onSnapshot(
         collection(db, `households/${hid}/installments`),
         { includeMetadataChanges: true },
         (snap) => applyCollectionSnapshot('installments', snap, setInstallments),
-        (err) => {
-          try {
-            handleFirestoreError(err, OperationType.LIST, `households/${hid}/installments`);
-          } catch (wrapped) {
-            setAsyncError(wrapped instanceof Error ? wrapped : new Error(String(wrapped)));
-          }
-        }
+        makeCollectionErrorHandler(`households/${hid}/installments`)
       ),
       onSnapshot(
         collection(db, `households/${hid}/goals`),
         { includeMetadataChanges: true },
         (snap) => applyCollectionSnapshot('goals', snap, setGoals),
-        (err) => {
-          try {
-            handleFirestoreError(err, OperationType.LIST, `households/${hid}/goals`);
-          } catch (wrapped) {
-            setAsyncError(wrapped instanceof Error ? wrapped : new Error(String(wrapped)));
-          }
-        }
+        makeCollectionErrorHandler(`households/${hid}/goals`)
       ),
       onSnapshot(
         query(collection(db, `households/${hid}/goalMovements`), orderBy('date', 'desc')),
         { includeMetadataChanges: true },
         (snap) => applyCollectionSnapshot('goalMovements', snap, setGoalMovements),
-        (err) => {
-          try {
-            handleFirestoreError(err, OperationType.LIST, `households/${hid}/goalMovements`);
-          } catch (wrapped) {
-            setAsyncError(wrapped instanceof Error ? wrapped : new Error(String(wrapped)));
-          }
-        }
+        makeCollectionErrorHandler(`households/${hid}/goalMovements`)
       ),
       onSnapshot(
         collection(db, `households/${hid}/plannedPurchases`),
         { includeMetadataChanges: true },
         (snap) => applyCollectionSnapshot('plannedPurchases', snap, setPlannedPurchases),
-        (err) => {
-          try {
-            handleFirestoreError(err, OperationType.LIST, `households/${hid}/plannedPurchases`);
-          } catch (wrapped) {
-            setAsyncError(wrapped instanceof Error ? wrapped : new Error(String(wrapped)));
-          }
-        }
+        makeCollectionErrorHandler(`households/${hid}/plannedPurchases`)
       ),
       onSnapshot(
         collection(db, `households/${hid}/scenarios`),
         { includeMetadataChanges: true },
         (snap) => applyCollectionSnapshot('scenarios', snap, setScenarios),
-        (err) => {
-          try {
-            handleFirestoreError(err, OperationType.LIST, `households/${hid}/scenarios`);
-          } catch (wrapped) {
-            setAsyncError(wrapped instanceof Error ? wrapped : new Error(String(wrapped)));
-          }
-        }
-      ),
-      onSnapshot(
-        query(collection(db, `households/${hid}/aiMessages`), orderBy('createdAt', 'asc')),
-        { includeMetadataChanges: true },
-        (snap) => applyCollectionSnapshot('aiMessages', snap, setAiMessages, false),
-        (err) => {
-          try {
-            handleFirestoreError(err, OperationType.LIST, `households/${hid}/aiMessages`);
-          } catch (wrapped) {
-            setAsyncError(wrapped instanceof Error ? wrapped : new Error(String(wrapped)));
-          }
-        }
+        makeCollectionErrorHandler(`households/${hid}/scenarios`)
       ),
       onSnapshot(
         collection(db, `households/${hid}/bankAccounts`),
         { includeMetadataChanges: true },
         (snap) => applyCollectionSnapshot('bankAccounts', snap, setBankAccounts),
-        (err) => {
-          try {
-            handleFirestoreError(err, OperationType.LIST, `households/${hid}/bankAccounts`);
-          } catch (wrapped) {
-            setAsyncError(wrapped instanceof Error ? wrapped : new Error(String(wrapped)));
-          }
-        }
+        makeCollectionErrorHandler(`households/${hid}/bankAccounts`)
       ),
     ];
 
@@ -914,7 +881,6 @@ export function AuthHouseholdProvider({ children }: { children: React.ReactNode 
       goalMovements,
       plannedPurchases,
       scenarios,
-      aiMessages,
     };
 
     const uid = user.uid;
@@ -955,7 +921,6 @@ export function AuthHouseholdProvider({ children }: { children: React.ReactNode 
     goalMovements,
     plannedPurchases,
     scenarios,
-    aiMessages,
   ]);
 
   // Flush imediato em pagehide / segundo plano (especialmente útil em PWA iOS/Android)
@@ -1118,6 +1083,9 @@ export function AuthHouseholdProvider({ children }: { children: React.ReactNode 
       partner2Name: p2,
       periodStart: sanitizePeriodStart(input.periodStart),
       categories: DEFAULT_CATEGORIES,
+      expenseCategories: DEFAULT_EXPENSE_CATEGORIES,
+      incomeCategories: DEFAULT_INCOME_CATEGORIES,
+      categoryIcons: DEFAULT_CATEGORY_ICONS,
       paymentMethods: DEFAULT_PAYMENT_METHODS,
       rooms: DEFAULT_ROOMS,
       accounts: DEFAULT_ACCOUNTS,
@@ -1127,12 +1095,30 @@ export function AuthHouseholdProvider({ children }: { children: React.ReactNode 
     };
 
     try {
+      const userRef = doc(db, 'users', user.uid);
+      let userExists = Boolean(userProfile?.uid);
+      if (!userExists) {
+        const snap = await getDoc(userRef);
+        userExists = snap.exists();
+      }
       const batch = writeBatch(db);
       batch.set(doc(db, 'households', hid), payload);
-      batch.update(doc(db, 'users', user.uid), {
-        activeHouseholdId: hid,
-        updatedAt: serverTimestamp(),
-      });
+      if (userExists) {
+        batch.update(userRef, {
+          activeHouseholdId: hid,
+          updatedAt: serverTimestamp(),
+        });
+      } else {
+        batch.set(userRef, {
+          uid: user.uid,
+          email: sanitizeStr(user.email || `${user.uid}@duofin.local`, 160),
+          displayName: p1,
+          photoURL: sanitizeStr(user.photoURL || '', 500),
+          activeHouseholdId: hid,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      }
       await batch.commit();
     } catch (err) {
       handleFirestoreError(err, OperationType.CREATE, `households/${hid}`);
@@ -1194,6 +1180,9 @@ export function AuthHouseholdProvider({ children }: { children: React.ReactNode 
     memberNames?: Record<string, string>;
     periodStart: string;
     categories: string[];
+    expenseCategories?: string[];
+    incomeCategories?: string[];
+    categoryIcons?: Record<string, string>;
     paymentMethods: string[];
     rooms: string[];
     accounts: string[];
@@ -1210,13 +1199,33 @@ export function AuthHouseholdProvider({ children }: { children: React.ReactNode 
       household?.memberUids
     );
 
+    const nextExpenseCats =
+      input.expenseCategories !== undefined
+        ? sanitizeStringArray(input.expenseCategories, 35, 60, 'Outros')
+        : resolveHouseholdExpenseCategories(household);
+    const nextIncomeCats =
+      input.incomeCategories !== undefined
+        ? sanitizeStringArray(input.incomeCategories, 35, 60, 'Outras receitas')
+        : resolveHouseholdIncomeCategories(household);
+    const mergedCategories =
+      input.expenseCategories !== undefined || input.incomeCategories !== undefined
+        ? sanitizeStringArray([...nextExpenseCats, ...nextIncomeCats, ...input.categories], 60, 60, 'Outros')
+        : sanitizeStringArray(input.categories, 60, 60, 'Outros');
+    const nextCategoryIcons =
+      input.categoryIcons !== undefined
+        ? sanitizeCategoryIcons(input.categoryIcons)
+        : sanitizeCategoryIcons(household?.categoryIcons ?? DEFAULT_CATEGORY_ICONS);
+
     const payload = {
       name: sanitizeStr(input.name, 80, 'Finanças Compartilhadas') || 'Finanças Compartilhadas',
       partner1Name: mergedNames[household?.partner1Uid ?? ''] || p1,
       partner2Name: p2,
       memberNames: mergedNames,
       periodStart: sanitizePeriodStart(input.periodStart),
-      categories: sanitizeStringArray(input.categories, 30, 60, 'Outros'),
+      categories: mergedCategories,
+      expenseCategories: nextExpenseCats,
+      incomeCategories: nextIncomeCats,
+      categoryIcons: nextCategoryIcons,
       paymentMethods: sanitizeStringArray(input.paymentMethods, 20, 40, 'Pix'),
       rooms: sanitizeStringArray(input.rooms, 25, 50, 'Outros'),
       accounts: sanitizeStringArray(input.accounts, 25, 60, 'Conta corrente'),
@@ -1229,27 +1238,178 @@ export function AuthHouseholdProvider({ children }: { children: React.ReactNode 
     }
   };
 
-  const addHouseholdCategory = async (rawName: string): Promise<string> => {
+  const addHouseholdCategory = async (
+    rawName: string,
+    group: 'Saída' | 'Entrada' = 'Saída',
+    iconKey?: string
+  ): Promise<string> => {
     const { hid } = requireContext();
     if (!household) throw new Error('Espaço não encontrado.');
     const cleanName = sanitizeStr(rawName, 60);
     if (!cleanName) {
       throw new Error('Informe o nome da nova categoria.');
     }
-    const existing = household.categories.find((c) => c.toLowerCase() === cleanName.toLowerCase());
-    if (existing) return existing;
-    if (household.categories.length >= 30) {
-      throw new Error('Limite máximo de 30 categorias atingido.');
+
+    const currentExpense = resolveHouseholdExpenseCategories(household);
+    const currentIncome = resolveHouseholdIncomeCategories(household);
+    const targetList = group === 'Entrada' ? currentIncome : currentExpense;
+
+    const existing = targetList.find((c) => c.toLowerCase() === cleanName.toLowerCase());
+    const cleanIcon = sanitizeStr(iconKey ?? '', 40);
+    const currentIcons = sanitizeCategoryIcons(household.categoryIcons ?? DEFAULT_CATEGORY_ICONS);
+
+    if (existing) {
+      if (cleanIcon && currentIcons[existing] !== cleanIcon) {
+        try {
+          await commitOfflineSafe(
+            updateDoc(doc(db, 'households', hid), {
+              categoryIcons: sanitizeCategoryIcons({ ...currentIcons, [existing]: cleanIcon }),
+              updatedAt: serverTimestamp(),
+            })
+          );
+        } catch (err) {
+          handleFirestoreError(err, OperationType.UPDATE, `households/${hid}`);
+        }
+      }
+      return existing;
     }
-    const nextCategories = [...household.categories, cleanName];
+
+    if (targetList.length >= 35) {
+      throw new Error(
+        `Limite máximo de 35 categorias de ${group === 'Entrada' ? 'receita' : 'despesa'} atingido.`
+      );
+    }
+
+    const nextExpense = group === 'Saída' ? [...currentExpense, cleanName] : currentExpense;
+    const nextIncome = group === 'Entrada' ? [...currentIncome, cleanName] : currentIncome;
+    const nextCategories = sanitizeStringArray([...nextExpense, ...nextIncome], 60, 60, 'Outros');
+    const nextIcons = cleanIcon
+      ? sanitizeCategoryIcons({ ...currentIcons, [cleanName]: cleanIcon })
+      : currentIcons;
+
     try {
       await commitOfflineSafe(
         updateDoc(doc(db, 'households', hid), {
           categories: nextCategories,
+          expenseCategories: nextExpense,
+          incomeCategories: nextIncome,
+          categoryIcons: nextIcons,
           updatedAt: serverTimestamp(),
         })
       );
       return cleanName;
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `households/${hid}`);
+    }
+  };
+
+  const updateHouseholdCategory = async (
+    oldName: string,
+    newName: string,
+    group: 'Saída' | 'Entrada',
+    iconKey?: string
+  ): Promise<string> => {
+    const { hid } = requireContext();
+    if (!household) throw new Error('Espaço não encontrado.');
+    const cleanNew = sanitizeStr(newName, 60);
+    if (!cleanNew) throw new Error('Informe um nome válido para a categoria.');
+
+    const currentExpense = resolveHouseholdExpenseCategories(household);
+    const currentIncome = resolveHouseholdIncomeCategories(household);
+    const targetList = group === 'Entrada' ? currentIncome : currentExpense;
+
+    const duplicate = targetList.find(
+      (c) => c.toLowerCase() === cleanNew.toLowerCase() && c.toLowerCase() !== oldName.toLowerCase()
+    );
+    if (duplicate) {
+      throw new Error(`Já existe uma categoria chamada "${duplicate}".`);
+    }
+
+    const updatedList = targetList.map((c) => (c === oldName ? cleanNew : c));
+    const nextExpense = group === 'Saída' ? updatedList : currentExpense;
+    const nextIncome = group === 'Entrada' ? updatedList : currentIncome;
+    const nextCategories = sanitizeStringArray([...nextExpense, ...nextIncome], 60, 60, 'Outros');
+
+    const nextIcons = { ...sanitizeCategoryIcons(household.categoryIcons ?? DEFAULT_CATEGORY_ICONS) };
+    const existingIcon = nextIcons[oldName];
+    if (oldName !== cleanNew) {
+      delete nextIcons[oldName];
+    }
+    const cleanIcon = sanitizeStr(iconKey ?? '', 40);
+    if (cleanIcon) {
+      nextIcons[cleanNew] = cleanIcon;
+    } else if (existingIcon && !nextIcons[cleanNew]) {
+      nextIcons[cleanNew] = existingIcon;
+    }
+
+    try {
+      await commitOfflineSafe(
+        updateDoc(doc(db, 'households', hid), {
+          categories: nextCategories,
+          expenseCategories: nextExpense,
+          incomeCategories: nextIncome,
+          categoryIcons: sanitizeCategoryIcons(nextIcons),
+          updatedAt: serverTimestamp(),
+        })
+      );
+      return cleanNew;
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `households/${hid}`);
+    }
+  };
+
+  const deleteHouseholdCategory = async (name: string, group: 'Saída' | 'Entrada') => {
+    const { hid } = requireContext();
+    if (!household) throw new Error('Espaço não encontrado.');
+    const currentExpense = resolveHouseholdExpenseCategories(household);
+    const currentIncome = resolveHouseholdIncomeCategories(household);
+    const targetList = group === 'Entrada' ? currentIncome : currentExpense;
+    if (targetList.length <= 1) {
+      throw new Error('É necessário manter pelo menos 1 categoria neste grupo.');
+    }
+
+    const filtered = targetList.filter((c) => c !== name);
+    const nextExpense = group === 'Saída' ? filtered : currentExpense;
+    const nextIncome = group === 'Entrada' ? filtered : currentIncome;
+    const nextCategories = sanitizeStringArray([...nextExpense, ...nextIncome], 60, 60, 'Outros');
+
+    const nextIcons = { ...sanitizeCategoryIcons(household.categoryIcons ?? DEFAULT_CATEGORY_ICONS) };
+    if (!nextExpense.includes(name) && !nextIncome.includes(name)) {
+      delete nextIcons[name];
+    }
+
+    try {
+      await commitOfflineSafe(
+        updateDoc(doc(db, 'households', hid), {
+          categories: nextCategories,
+          expenseCategories: nextExpense,
+          incomeCategories: nextIncome,
+          categoryIcons: sanitizeCategoryIcons(nextIcons),
+          updatedAt: serverTimestamp(),
+        })
+      );
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `households/${hid}`);
+    }
+  };
+
+  const setHouseholdCategoryIcon = async (name: string, iconKey: string) => {
+    const { hid } = requireContext();
+    if (!household) throw new Error('Espaço não encontrado.');
+    const cleanName = sanitizeStr(name, 60);
+    const cleanIcon = sanitizeStr(iconKey, 40);
+    if (!cleanName || !cleanIcon) return;
+
+    const currentIcons = sanitizeCategoryIcons(household.categoryIcons ?? DEFAULT_CATEGORY_ICONS);
+    const nextIcons = sanitizeCategoryIcons({ ...currentIcons, [cleanName]: cleanIcon });
+
+    try {
+      await commitOfflineSafe(
+        updateDoc(doc(db, 'households', hid), {
+          categoryIcons: nextIcons,
+          updatedAt: serverTimestamp(),
+        })
+      );
     } catch (err) {
       handleFirestoreError(err, OperationType.UPDATE, `households/${hid}`);
     }
@@ -2207,39 +2367,6 @@ export function AuthHouseholdProvider({ children }: { children: React.ReactNode 
     }
   };
 
-  const addAiMessage = async (input: Parameters<typeof validateAiMessageInput>[0]) => {
-    const { user: u, hid } = requireContext();
-    const clean = validateAiMessageInput(input);
-    const colPath = `households/${hid}/aiMessages`;
-    try {
-      const newRef = doc(collection(db, colPath));
-      await commitOfflineSafe(
-        setDoc(newRef, {
-          ...clean,
-          createdByUid: u.uid,
-          createdByName: currentAuthorName,
-          createdAt: serverTimestamp(),
-        })
-      );
-    } catch (err) {
-      handleFirestoreError(err, OperationType.CREATE, colPath);
-    }
-  };
-
-  const clearAiMessages = async () => {
-    const { hid } = requireContext();
-    const colPath = `households/${hid}/aiMessages`;
-    try {
-      const batch = writeBatch(db);
-      for (const msg of aiMessages) {
-        batch.delete(doc(db, colPath, assertValidId(msg.id)));
-      }
-      await commitOfflineSafe(batch.commit());
-    } catch (err) {
-      handleFirestoreError(err, OperationType.DELETE, colPath);
-    }
-  };
-
   // Bank Accounts
   const saveBankAccount = async (input: Parameters<typeof validateBankAccountInput>[0], existingId?: string) => {
     const { user: u, hid } = requireContext();
@@ -2305,7 +2432,6 @@ export function AuthHouseholdProvider({ children }: { children: React.ReactNode 
     goalMovements,
     plannedPurchases,
     scenarios,
-    aiMessages,
     bankAccounts,
     currentPartnerName,
     currentAuthorName,
@@ -2318,6 +2444,9 @@ export function AuthHouseholdProvider({ children }: { children: React.ReactNode 
     joinHouseholdWithCode,
     updateHouseholdSettings,
     addHouseholdCategory,
+    updateHouseholdCategory,
+    deleteHouseholdCategory,
+    setHouseholdCategoryIcon,
     createInviteCode,
     deleteInviteCode,
     removeMember,
@@ -2350,8 +2479,6 @@ export function AuthHouseholdProvider({ children }: { children: React.ReactNode 
     deletePlannedPurchase,
     saveScenario,
     deleteScenario,
-    addAiMessage,
-    clearAiMessages,
     saveBankAccount,
     deleteBankAccount,
   };

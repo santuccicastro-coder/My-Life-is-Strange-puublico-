@@ -13,6 +13,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { CategoryBadgeIcon } from '../utils/categoryVisuals';
+import { resolveHouseholdExpenseCategories } from '../utils/validation';
 import { ModalPortal } from '../components/ModalPortal';
 import { useFinance } from '../context/AuthHouseholdContext';
 import type { TransactionStatus } from '../types/finance';
@@ -131,6 +132,8 @@ export function RemindersPage() {
   const [newNotes, setNewNotes] = useState('');
   const [savingNew, setSavingNew] = useState(false);
   const [modalError, setModalError] = useState('');
+
+  const expenseCategories = useMemo(() => resolveHouseholdExpenseCategories(household), [household]);
 
   const monthKeys = useMemo(() => {
     const start = household?.periodStart ?? `${new Date().getFullYear()}-01-01`;
@@ -258,9 +261,9 @@ export function RemindersPage() {
     setNewAmount('');
     setNewDueDate(selectedMonth === currentMonthKey ? todayISO : `${selectedMonth}-10`);
     setNewCategory(
-      household?.categories.includes('Contas fixas')
-        ? 'Contas fixas'
-        : household?.categories[0] ?? 'Outros'
+      expenseCategories.find((c) => c.toLowerCase().includes('contas')) ??
+        expenseCategories[0] ??
+        'Outros'
     );
     setNewPerson(currentPartnerName);
     setNewMethod(household?.paymentMethods.find((m) => m !== 'Crédito') ?? 'Pix');
@@ -580,7 +583,12 @@ export function RemindersPage() {
                   }`}
                 >
                   <div className="flex items-start gap-3 min-w-0">
-                    <CategoryBadgeIcon category={item.category} type="Saída" size="md" />
+                    <CategoryBadgeIcon
+                      category={item.category}
+                      type="Saída"
+                      size="md"
+                      customIcons={household?.categoryIcons}
+                    />
                     <div className="min-w-0 space-y-1">
                       <div className="flex flex-wrap items-center gap-2">
                         <p
@@ -759,7 +767,7 @@ export function RemindersPage() {
                       onChange={(e) => setNewCategory(e.target.value)}
                       className="w-full px-3 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-950"
                     >
-                      {household.categories.map((c) => (
+                      {expenseCategories.map((c) => (
                         <option key={c} value={c}>
                           {c}
                         </option>

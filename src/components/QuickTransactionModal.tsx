@@ -15,6 +15,12 @@ import {
   resolveTransactionSignAndType,
   sanitizeSignedDecimalInput,
 } from '../utils/financeCalculations';
+import { CATEGORY_ICON_OPTIONS, CategoryBadgeIcon } from '../utils/categoryVisuals';
+import {
+  DEFAULT_CATEGORY_ICONS,
+  resolveHouseholdExpenseCategories,
+  resolveHouseholdIncomeCategories,
+} from '../utils/validation';
 
 interface QuickTransactionModalProps {
   open: boolean;
@@ -49,7 +55,24 @@ export function QuickTransactionModal({
   const [category, setCategory] = useState('Outros');
   const [creatingCategory, setCreatingCategory] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
+  const [newCategoryIcon, setNewCategoryIcon] = useState('Package');
   const [categorySaving, setCategorySaving] = useState(false);
+
+  const expenseCategories = useMemo(() => resolveHouseholdExpenseCategories(household), [household]);
+  const incomeCategories = useMemo(() => resolveHouseholdIncomeCategories(household), [household]);
+
+  const availableCategories = useMemo(() => {
+    const base =
+      type === 'Entrada'
+        ? incomeCategories
+        : type === 'Saída'
+          ? expenseCategories
+          : Array.from(new Set([...expenseCategories, ...incomeCategories]));
+    if (editingTransaction?.category && !base.includes(editingTransaction.category)) {
+      return [...base, editingTransaction.category];
+    }
+    return base;
+  }, [type, expenseCategories, incomeCategories, editingTransaction]);
 
   const [person, setPerson] = useState(currentPartnerName);
   const [date, setDate] = useState(getTodayISO());
@@ -78,6 +101,9 @@ export function QuickTransactionModal({
     if (res.isNegative) {
       setType('Saída');
       setAutoExpenseFromNegative(true);
+      if (!expenseCategories.includes(category) && expenseCategories.length > 0) {
+        setCategory(expenseCategories[0]);
+      }
     } else {
       setAutoExpenseFromNegative(false);
     }
@@ -92,6 +118,9 @@ export function QuickTransactionModal({
       setActualAmount(`-${trimmed}`);
       setType('Saída');
       setAutoExpenseFromNegative(true);
+      if (!expenseCategories.includes(category) && expenseCategories.length > 0) {
+        setCategory(expenseCategories[0]);
+      }
     }
     amountInputRef.current?.focus();
   };
@@ -120,6 +149,7 @@ export function QuickTransactionModal({
     setCreditInstallments(1);
     setCreatingCategory(false);
     setNewCategoryName('');
+    setNewCategoryIcon(defaultType === 'Entrada' ? 'Briefcase' : 'Package');
 
     if (editingTransaction) {
       setType(editingTransaction.type);
@@ -146,7 +176,9 @@ export function QuickTransactionModal({
       setDescription('');
       setActualAmount('');
       setPlannedAmount('');
-      setCategory(household?.categories[0] ?? 'Outros');
+      const expCats = resolveHouseholdExpenseCategories(household);
+      const incCats = resolveHouseholdIncomeCategories(household);
+      setCategory(defaultType === 'Entrada' ? incCats[0] ?? 'Outras receitas' : expCats[0] ?? 'Outros');
       setPerson(currentPartnerName);
       setDate(getTodayISO());
       setPaymentMethod(household?.paymentMethods[0] ?? 'Pix');
@@ -186,7 +218,8 @@ export function QuickTransactionModal({
     setError('');
     setCategorySaving(true);
     try {
-      const created = await addHouseholdCategory(trimmed);
+      const group: 'Saída' | 'Entrada' = type === 'Entrada' ? 'Entrada' : 'Saída';
+      const created = await addHouseholdCategory(trimmed, group, newCategoryIcon);
       setCategory(created);
       setCreatingCategory(false);
       setNewCategoryName('');
@@ -233,7 +266,8 @@ export function QuickTransactionModal({
     try {
       let resolvedCategory = category;
       if (creatingCategory && newCategoryName.trim()) {
-        resolvedCategory = await addHouseholdCategory(newCategoryName.trim());
+        const group: 'Saída' | 'Entrada' = effectiveType === 'Entrada' ? 'Entrada' : 'Saída';
+        resolvedCategory = await addHouseholdCategory(newCategoryName.trim(), group, newCategoryIcon);
         setCategory(resolvedCategory);
         setCreatingCategory(false);
         setNewCategoryName('');
@@ -331,6 +365,17 @@ export function QuickTransactionModal({
                   type="button"
                   onClick={() => {
                     setType(t);
+                    if (t === 'Entrada') {
+                      if (!incomeCategories.includes(category) && incomeCategories.length > 0) {
+                        setCategory(incomeCategories[0]);
+                      }
+                      setNewCategoryIcon(DEFAULT_CATEGORY_ICONS[incomeCategories[0]] ?? 'Briefcase');
+                    } else if (t === 'Saída') {
+                      if (!expenseCategories.includes(category) && expenseCategories.length > 0) {
+                        setCategory(expenseCategories[0]);
+                      }
+                      setNewCategoryIcon('Package');
+                    }
                     if (t !== 'Saída') {
                       setCreditInstallments(1);
                       if (actualAmount.trimStart().startsWith('-')) {
@@ -437,12 +482,15 @@ export function QuickTransactionModal({
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
               <div className="flex items-center justify-between gap-1 mb-1">
-                <label className="block text-xs font-medium text-slate-700">Categoria</label>
+                <label className="block text-xs font-medium text-slate-700">
+                  Categoria {type === 'Entrada' ? '(Receita)' : type === 'Saída' ? '(Despesa)' : ''}
+                </label>
                 <button
                   type="button"
                   onClick={() => {
                     setCreatingCategory((v) => !v);
                     setNewCategoryName('');
+                    setNewCategoryIcon(type === 'Entrada' ? 'Briefcase' : 'Package');
                     setError('');
                   }}
                   className="inline-flex items-center gap-0.5 text-[11px] font-semibold text-emerald-700 hover:text-emerald-800 cursor-pointer"
@@ -453,49 +501,76 @@ export function QuickTransactionModal({
               </div>
 
               {creatingCategory ? (
-                <div className="flex items-center gap-1.5">
-                  <input
-                    type="text"
-                    maxLength={60}
-                    value={newCategoryName}
-                    onChange={(e) => setNewCategoryName(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        handleCreateCustomCategory();
-                      }
-                    }}
-                    placeholder="Ex.: Pets, Beleza..."
-                    className="w-full min-w-0 px-2.5 py-2 text-xs border border-emerald-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-600"
-                  />
-                  <button
-                    type="button"
-                    disabled={categorySaving}
-                    onClick={handleCreateCustomCategory}
-                    className="px-2.5 py-2 text-xs font-semibold bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 cursor-pointer shrink-0"
-                  >
-                    {categorySaving ? '...' : 'Criar'}
-                  </button>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="text"
+                      maxLength={60}
+                      value={newCategoryName}
+                      onChange={(e) => setNewCategoryName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleCreateCustomCategory();
+                        }
+                      }}
+                      placeholder={type === 'Entrada' ? 'Ex.: Bônus, Dividendos...' : 'Ex.: Pets, Beleza...'}
+                      className="w-full min-w-0 px-2.5 py-2 text-xs border border-emerald-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                    />
+                    <button
+                      type="button"
+                      disabled={categorySaving}
+                      onClick={handleCreateCustomCategory}
+                      className="px-2.5 py-2 text-xs font-semibold bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 cursor-pointer shrink-0"
+                    >
+                      {categorySaving ? '...' : 'Criar'}
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-7 gap-1">
+                    {CATEGORY_ICON_OPTIONS.slice(0, 14).map(({ key, label, Icon }) => (
+                      <button
+                        key={key}
+                        type="button"
+                        title={label}
+                        onClick={() => setNewCategoryIcon(key)}
+                        className={`h-7 rounded-md border flex items-center justify-center cursor-pointer transition-colors ${
+                          newCategoryIcon === key
+                            ? 'bg-slate-900 text-white border-slate-900'
+                            : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                        }`}
+                      >
+                        <Icon className="w-3.5 h-3.5" />
+                      </button>
+                    ))}
+                  </div>
                 </div>
               ) : (
-                <select
-                  value={category}
-                  onChange={(e) => {
-                    if (e.target.value === '__CUSTOM_CATEGORY__') {
-                      setCreatingCategory(true);
-                      return;
-                    }
-                    setCategory(e.target.value);
-                  }}
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-slate-900"
-                >
-                  {household.categories.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                  <option value="__CUSTOM_CATEGORY__">+ Criar nova categoria...</option>
-                </select>
+                <div className="flex items-center gap-2">
+                  <CategoryBadgeIcon
+                    category={category}
+                    type={type}
+                    size="sm"
+                    customIcons={household.categoryIcons}
+                  />
+                  <select
+                    value={category}
+                    onChange={(e) => {
+                      if (e.target.value === '__CUSTOM_CATEGORY__') {
+                        setCreatingCategory(true);
+                        return;
+                      }
+                      setCategory(e.target.value);
+                    }}
+                    className="w-full min-w-0 px-2.5 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-slate-900"
+                  >
+                    {availableCategories.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                    <option value="__CUSTOM_CATEGORY__">+ Criar nova categoria...</option>
+                  </select>
+                </div>
               )}
             </div>
 

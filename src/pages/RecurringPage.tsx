@@ -30,6 +30,11 @@ import {
   parseSignedDecimal,
   sanitizeSignedDecimalInput,
 } from '../utils/financeCalculations';
+import { CategoryBadgeIcon } from '../utils/categoryVisuals';
+import {
+  resolveHouseholdExpenseCategories,
+  resolveHouseholdIncomeCategories,
+} from '../utils/validation';
 
 interface RecurringPageProps {
   onNavigate: (route: AppRoute) => void;
@@ -72,6 +77,17 @@ export function RecurringPage({ onNavigate }: RecurringPageProps) {
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+
+  const expenseCategories = useMemo(() => resolveHouseholdExpenseCategories(household), [household]);
+  const incomeCategories = useMemo(() => resolveHouseholdIncomeCategories(household), [household]);
+
+  const activeCategoryOptions = useMemo(() => {
+    const base = type === 'Entrada' ? incomeCategories : expenseCategories;
+    if (editing?.category && !base.includes(editing.category)) {
+      return [...base, editing.category];
+    }
+    return base;
+  }, [type, incomeCategories, expenseCategories, editing]);
 
   const monthOptions = useMemo(() => {
     const start = household?.periodStart ?? `${new Date().getFullYear()}-01-01`;
@@ -182,8 +198,8 @@ export function RecurringPage({ onNavigate }: RecurringPageProps) {
     setAmount('');
     setCategory(
       defaultType === 'Saída'
-        ? household?.categories.find((c) => c.toLowerCase().includes('fixa')) ?? household?.categories[0] ?? 'Contas fixas'
-        : 'Outros'
+        ? expenseCategories.find((c) => c.toLowerCase().includes('contas')) ?? expenseCategories[0] ?? 'Outros'
+        : incomeCategories[0] ?? 'Outras receitas'
     );
     setPerson(currentPartnerName);
     setFrequency('Mensal');
@@ -429,42 +445,50 @@ export function RecurringPage({ onNavigate }: RecurringPageProps) {
                     !item.active ? 'opacity-60 bg-slate-50/50' : 'hover:bg-slate-50/60'
                   }`}
                 >
-                  <div className="min-w-0 space-y-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span
-                        className={`text-[11px] font-semibold px-2 py-0.5 rounded-md ${
-                          item.type === 'Entrada'
-                            ? 'bg-emerald-50 text-emerald-700'
-                            : 'bg-slate-100 text-slate-700'
-                        }`}
-                      >
-                        {item.type === 'Entrada' ? 'Ganho fixo · Renda' : 'Despesa fixa'}
-                      </span>
-                      <p className="text-sm font-semibold text-slate-900 truncate">{item.description}</p>
-                      {item.type === 'Entrada' && (
-                        <span className="text-[11px] font-medium text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md">
-                          Projetada na aba Renda
+                  <div className="flex items-start gap-3 min-w-0">
+                    <CategoryBadgeIcon
+                      category={item.category}
+                      type={item.type}
+                      size="sm"
+                      customIcons={household.categoryIcons}
+                    />
+                    <div className="min-w-0 space-y-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span
+                          className={`text-[11px] font-semibold px-2 py-0.5 rounded-md ${
+                            item.type === 'Entrada'
+                              ? 'bg-emerald-50 text-emerald-700'
+                              : 'bg-slate-100 text-slate-700'
+                          }`}
+                        >
+                          {item.type === 'Entrada' ? 'Ganho fixo · Renda' : 'Despesa fixa'}
                         </span>
-                      )}
-                      {!item.active && (
-                        <span className="text-[11px] font-medium text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md">
-                          Pausado
-                        </span>
-                      )}
-                      {item.paymentMethod === 'Crédito' && (
-                        <span className="text-[11px] font-medium text-sky-700 bg-sky-50 px-2 py-0.5 rounded-md">
-                          Na fatura
-                        </span>
-                      )}
+                        <p className="text-sm font-semibold text-slate-900 truncate">{item.description}</p>
+                        {item.type === 'Entrada' && (
+                          <span className="text-[11px] font-medium text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md">
+                            Projetada na aba Renda
+                          </span>
+                        )}
+                        {!item.active && (
+                          <span className="text-[11px] font-medium text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md">
+                            Pausado
+                          </span>
+                        )}
+                        {item.paymentMethod === 'Crédito' && (
+                          <span className="text-[11px] font-medium text-sky-700 bg-sky-50 px-2 py-0.5 rounded-md">
+                            Na fatura
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-slate-500">
+                        {item.frequency} · Dia {item.dayOfMonth} · {item.category} · {item.person} · {item.paymentMethod} ({item.accountOrCard})
+                      </p>
+                      <p className="text-[11px] text-slate-400">
+                        Início: {formatMonthShort(item.startMonthKey)}
+                        {item.endMonthKey ? ` · Término: ${formatMonthShort(item.endMonthKey)}` : ' · Contínuo'}
+                        {item.notes ? ` · ${item.notes}` : ''}
+                      </p>
                     </div>
-                    <p className="text-xs text-slate-500">
-                      {item.frequency} · Dia {item.dayOfMonth} · {item.category} · {item.person} · {item.paymentMethod} ({item.accountOrCard})
-                    </p>
-                    <p className="text-[11px] text-slate-400">
-                      Início: {formatMonthShort(item.startMonthKey)}
-                      {item.endMonthKey ? ` · Término: ${formatMonthShort(item.endMonthKey)}` : ' · Contínuo'}
-                      {item.notes ? ` · ${item.notes}` : ''}
-                    </p>
                   </div>
 
                   <div className="flex flex-wrap sm:flex-nowrap items-center justify-between sm:justify-end gap-3 shrink-0">
@@ -658,6 +682,10 @@ export function RecurringPage({ onNavigate }: RecurringPageProps) {
                     type="button"
                     onClick={() => {
                       setType(t);
+                      const nextList = t === 'Entrada' ? incomeCategories : expenseCategories;
+                      if (!nextList.includes(category) && nextList.length > 0) {
+                        setCategory(nextList[0]);
+                      }
                       if (t === 'Entrada' && amount.trimStart().startsWith('-')) {
                         setAmount(amount.trimStart().slice(1));
                       }
@@ -803,13 +831,15 @@ export function RecurringPage({ onNavigate }: RecurringPageProps) {
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1">Categoria</label>
+                  <label className="block text-xs font-medium text-slate-700 mb-1">
+                    Categoria {type === 'Entrada' ? '(Receita)' : '(Despesa)'}
+                  </label>
                   <select
                     value={category}
                     onChange={(e) => setCategory(e.target.value)}
                     className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white"
                   >
-                    {household.categories.map((c) => (
+                    {activeCategoryOptions.map((c) => (
                       <option key={c} value={c}>
                         {c}
                       </option>

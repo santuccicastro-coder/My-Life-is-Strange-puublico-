@@ -30,6 +30,9 @@
         "partner2Name": { "type": "string", "minLength": 1, "maxLength": 50 },
         "periodStart": { "type": "string", "minLength": 10, "maxLength": 10, "pattern": "^\\d{4}-\\d{2}-01$" },
         "categories": { "type": "array" },
+        "expenseCategories": { "type": "array" },
+        "incomeCategories": { "type": "array" },
+        "categoryIcons": { "type": "object" },
         "paymentMethods": { "type": "array" },
         "rooms": { "type": "array" },
         "accounts": { "type": "array" },
@@ -324,6 +327,7 @@
       "type": "object",
       "properties": {
         "priority": { "type": "integer" },
+        "itemKind": { "type": "string", "enum": ["compra", "projeto"] },
         "room": { "type": "string", "minLength": 1, "maxLength": 50 },
         "projectCategory": { "type": "string", "maxLength": 50 },
         "iconName": { "type": "string", "maxLength": 40 },

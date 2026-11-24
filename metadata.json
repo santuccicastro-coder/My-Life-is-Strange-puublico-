@@ -1,6 +1,6 @@
 {
   "name": "DuoFin",
   "description": "Aplicativo compartilhado de controle financeiro para casais com lançamentos rápidos, cartões, parcelamentos, metas, compras planejadas e cenários.",
-  "requestFramePermissions": ["microphone"],
+  "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

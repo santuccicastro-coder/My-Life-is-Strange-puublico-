@@ -1,5 +1,4 @@
 import type {
-  AiChatMessage,
   BankAccount,
   CreditCard,
   Goal,
@@ -27,7 +26,6 @@ export interface FinanceCachedCollections {
   goalMovements: GoalMovement[];
   plannedPurchases: PlannedPurchase[];
   scenarios: Scenario[];
-  aiMessages: AiChatMessage[];
 }
 
 export interface FinanceOfflineSnapshot extends FinanceCachedCollections {
@@ -133,7 +131,6 @@ export function buildOfflineSnapshot(
     goalMovements: sanitizeForOfflineCache(collections.goalMovements),
     plannedPurchases: sanitizeForOfflineCache(collections.plannedPurchases),
     scenarios: sanitizeForOfflineCache(collections.scenarios),
-    aiMessages: sanitizeForOfflineCache(collections.aiMessages),
   };
 }
 

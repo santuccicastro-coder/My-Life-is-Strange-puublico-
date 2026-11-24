@@ -15,7 +15,6 @@ import {
   Search,
   ShoppingBag,
   SlidersHorizontal,
-  Sparkles,
   Trash2,
   X,
 } from 'lucide-react';
@@ -35,7 +34,6 @@ import {
 } from 'recharts';
 import { useFinance } from '../context/AuthHouseholdContext';
 import { useTheme } from '../context/ThemeContext';
-import { auth } from '../firebase';
 import type {
   AppRoute,
   HorizonScenarioRule,
@@ -47,7 +45,6 @@ import { CHART_ANIMATION, getChartTheme, SEMANTIC_COLORS } from '../utils/chartC
 import {
   addDaysISO,
   addMonthsToKey,
-  buildCoupleFinancialContextSummary,
   computeFreeMoneyProjection,
   computeMonthCalendarData,
   computeShortHorizon,
@@ -174,11 +171,6 @@ export function HorizonPage({ onNavigate, initialTab = 'projecao' }: HorizonPage
   const [simEndMonth, setSimEndMonth] = useState('');
   const [simDay, setSimDay] = useState('15');
   const [simCardId, setSimCardId] = useState('');
-
-  // Insight de IA
-  const [aiLoading, setAiLoading] = useState(false);
-  const [aiInsight, setAiInsight] = useState<string | null>(null);
-  const [aiError, setAiError] = useState<string | null>(null);
 
   const isDaily7Mode = preset === 'diarios';
   const isWeekly28Mode = preset === 'semanais';
@@ -491,17 +483,14 @@ export function HorizonPage({ onNavigate, initialTab = 'projecao' }: HorizonPage
     setScenarioRules((prev) => [...prev, newRule]);
     setScTitle('');
     setScAmount('');
-    setAiInsight(null);
   };
 
   const toggleScenarioRule = (id: string) => {
     setScenarioRules((prev) => prev.map((r) => (r.id === id ? { ...r, enabled: !r.enabled } : r)));
-    setAiInsight(null);
   };
 
   const removeScenarioRule = (id: string) => {
     setScenarioRules((prev) => prev.filter((r) => r.id !== id));
-    setAiInsight(null);
   };
 
   const handleAddSimulated = (e: React.FormEvent) => {
@@ -525,7 +514,6 @@ export function HorizonPage({ onNavigate, initialTab = 'projecao' }: HorizonPage
     setSimulatedPurchases((prev) => [...prev, newItem]);
     setSimDesc('');
     setSimAmount('');
-    setAiInsight(null);
   };
 
   const handleImportPlanned = (purchaseId: string) => {
@@ -544,102 +532,16 @@ export function HorizonPage({ onNavigate, initialTab = 'projecao' }: HorizonPage
 
   const toggleSimulated = (id: string) => {
     setSimulatedPurchases((prev) => prev.map((s) => (s.id === id ? { ...s, enabled: !s.enabled } : s)));
-    setAiInsight(null);
   };
 
   const removeSimulated = (id: string) => {
     setSimulatedPurchases((prev) => prev.filter((s) => s.id !== id));
-    setAiInsight(null);
   };
 
   const handleExpandInfinite = (extraMonths: number) => {
     const next = Math.min(MAX_HORIZON_MONTHS, infiniteMonthsCount + extraMonths);
     setInfiniteMonthsCount(next);
     setVisibleRowsLimit((prev) => Math.max(prev, next));
-  };
-
-  const handleAnalyzeWithAi = async () => {
-    setAiLoading(true);
-    setAiError(null);
-    try {
-      const contextSummary = buildCoupleFinancialContextSummary({
-        householdName: household?.name,
-        partner1Name: household?.partner1Name,
-        partner2Name: household?.partner2Name,
-        memberNames: getHouseholdMembersList(household).map((m) => m.name),
-        incomes,
-        transactions,
-        recurringItems,
-        cards,
-        installments,
-        goals,
-        plannedPurchases,
-        bankAccounts,
-        horizonStartMonth: startMonth,
-        horizonMonthsCount: monthKeys.length,
-      });
-
-      const activeSimsText =
-        simulatedPurchases
-          .filter((s) => s.enabled)
-          .map(
-            (s) =>
-              `${s.description}: ${formatBRL(s.totalAmount)} (${
-                s.mode === 'avista'
-                  ? `à vista em ${formatMonthShort(s.startMonthKey)}`
-                  : s.mode === 'parcelado'
-                    ? `${s.installmentsCount}x a partir de ${formatMonthShort(s.startMonthKey)}`
-                    : `fixo mensal a partir de ${formatMonthShort(s.startMonthKey)}${
-                        s.endMonthKey ? ` até ${formatMonthShort(s.endMonthKey)}` : ' (sem término)'
-                      }`
-              })`
-          )
-          .join('; ') || 'Nenhuma compra avulsa simulada';
-
-      const activeRulesText =
-        scenarioRules
-          .filter((r) => r.enabled)
-          .map((r) => `${SCENARIO_TYPE_LABELS[r.type]}: ${r.title} (${r.usePercentage ? `${r.amount}%` : formatBRL(r.amount)})`)
-          .join('; ') || 'Nenhum cenário adicional';
-
-      const dim = freeMoneyProj.dimensions;
-      const horizonSummary = [
-        `Período analisado: ${formatDateBR(freeMoneyProj.startDateISO)} até ${formatDateBR(freeMoneyProj.endDateISO)} (${
-          isDailyWindowMode ? `${dailyWindowDaysCount} dias` : `${horizon.summary.monthsCount} meses`
-        }).`,
-        `Saldo bancário real atual: ${formatBRL(dim.saldoBancarioReal)} | Receitas previstas no período: ${formatBRL(dim.receitasPrevistas)} | Compromissos futuros: ${formatBRL(dim.compromissosFuturos)} | Reservas planejadas: ${formatBRL(dim.reservasPlanejadas)}.`,
-        `Dinheiro livre projetado ao final do período: ${formatBRL(dim.dinheiroLivreProjetado)}.`,
-        `Consulta para data alvo ${formatDateBR(targetDateQuery.targetDateISO)}: ${formatBRL(targetDateQuery.dinheiroLivreProjetado)} disponíveis (ponto mínimo antes da data: ${formatBRL(targetDateQuery.minimumBeforeTargetDate.projectedFreeMoney)} em ${formatDateBR(targetDateQuery.minimumBeforeTargetDate.dateISO)}).`,
-        `Cenários determinísticos ativos: ${activeRulesText}.`,
-        `Compras simuladas: ${activeSimsText}.`,
-        freeMoneyProj.negativeAlerts.length > 0
-          ? `Alertas de saldo negativo: ${freeMoneyProj.negativeAlerts.slice(0, 3).map((a) => a.message).join(' | ')}`
-          : 'Sem alerta de saldo negativo na janela analisada.',
-      ].join('\n');
-
-      const token = await auth.currentUser?.getIdToken();
-      if (!token) {
-        throw new Error('Sessão expirada. Faça login novamente para analisar com IA.');
-      }
-
-      const res = await fetch('/api/ai/horizon-insight', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ horizonSummary, contextSummary }),
-      });
-      const data = (await res.json()) as { insight?: string; error?: string };
-      if (!res.ok) {
-        throw new Error(data.error || 'Falha ao consultar análise de IA.');
-      }
-      setAiInsight(data.insight || null);
-    } catch (err) {
-      setAiError(err instanceof Error ? err.message : 'Erro ao analisar horizonte.');
-    } finally {
-      setAiLoading(false);
-    }
   };
 
   return (
@@ -654,22 +556,10 @@ export function HorizonPage({ onNavigate, initialTab = 'projecao' }: HorizonPage
             Projeção real de fluxo de caixa, datas de recebimento e vencimento, reservas e cenários determinísticos.
           </p>
         </div>
-
-        {hubTab === 'projecao' && (
-          <button
-            type="button"
-            onClick={handleAnalyzeWithAi}
-            disabled={aiLoading}
-            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-900 dark:bg-emerald-600 text-white text-sm font-semibold rounded-xl hover:bg-slate-800 dark:hover:bg-emerald-500 disabled:opacity-50 transition-colors cursor-pointer shrink-0 whitespace-nowrap"
-          >
-            <Sparkles className="w-4 h-4 text-emerald-300 dark:text-white shrink-0" />
-            {aiLoading ? 'Analisando horizonte...' : 'Analisar Horizonte com IA'}
-          </button>
-        )}
       </div>
 
       {/* Abas Agrupadas do Hub */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-1 p-1 bg-slate-100 dark:bg-slate-900 rounded-xl border border-slate-200/80 dark:border-slate-800">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-1 p-1 bg-slate-100 dark:bg-slate-800/80 rounded-2xl border border-slate-200 dark:border-slate-800">
         {(
           [
             { id: 'projecao', label: 'Projeção & Dinheiro Livre', icon: CalendarRange },
@@ -685,13 +575,13 @@ export function HorizonPage({ onNavigate, initialTab = 'projecao' }: HorizonPage
               key={tab.id}
               type="button"
               onClick={() => setHubTab(tab.id)}
-              className={`min-h-[42px] px-2.5 py-2 rounded-lg text-xs font-semibold inline-flex items-center justify-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap ${
+              className={`min-h-[42px] px-2.5 py-2 rounded-xl text-xs font-semibold inline-flex items-center justify-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap ${
                 active
-                  ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-xs'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                  ? 'bg-slate-900 dark:bg-emerald-600 text-white shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
               }`}
             >
-              <Icon className={`w-3.5 h-3.5 shrink-0 ${active ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}`} />
+              <Icon className="w-3.5 h-3.5 shrink-0" />
               <span className="truncate">{tab.label}</span>
             </button>
           );
@@ -1138,38 +1028,6 @@ export function HorizonPage({ onNavigate, initialTab = 'projecao' }: HorizonPage
                       </button>
                     ))}
                   </div>
-                </div>
-              )}
-            </section>
-          )}
-
-          {/* Análise de IA (quando solicitada) */}
-          {(aiInsight || aiError) && (
-            <section
-              className={`rounded-xl border p-5 space-y-3 ${
-                aiError
-                  ? 'bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-900'
-                  : 'bg-white dark:bg-slate-900 border-sky-200 dark:border-sky-800'
-              }`}
-            >
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <Sparkles className={`w-4 h-4 ${aiError ? 'text-red-600' : 'text-sky-600 dark:text-sky-400'}`} />
-                  <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Leitura do Horizonte pela IA</h2>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => onNavigate('ia')}
-                  className="text-xs font-semibold text-sky-700 dark:text-sky-400 hover:underline cursor-pointer"
-                >
-                  Continuar no Assistente IA
-                </button>
-              </div>
-              {aiError ? (
-                <p className="text-sm text-red-700 dark:text-red-300">{aiError}</p>
-              ) : (
-                <div className="text-sm text-slate-700 dark:text-slate-300 whitespace-pre-line leading-relaxed">
-                  {aiInsight}
                 </div>
               )}
             </section>
@@ -1678,7 +1536,6 @@ export function HorizonPage({ onNavigate, initialTab = 'projecao' }: HorizonPage
                       onClick={() => {
                         setScenarioRules([]);
                         setSimulatedPurchases([]);
-                        setAiInsight(null);
                       }}
                       className="text-xs text-slate-500 hover:text-rose-600 cursor-pointer"
                     >
@@ -2539,8 +2396,8 @@ export function HorizonPage({ onNavigate, initialTab = 'projecao' }: HorizonPage
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-                  <div className="lg:col-span-8">
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-4 lg:gap-5">
+                  <div className="md:col-span-7 lg:col-span-8">
                     <div className="grid grid-cols-7 gap-1 mb-1">
                       {WEEKDAY_HEADERS.map((wd) => (
                         <div key={wd} className="text-center text-[11px] font-semibold text-slate-500 dark:text-slate-400 py-1">
@@ -2620,7 +2477,7 @@ export function HorizonPage({ onNavigate, initialTab = 'projecao' }: HorizonPage
                     </div>
                   </div>
 
-                  <div className="lg:col-span-4 border border-slate-200 dark:border-slate-800 rounded-xl p-4 space-y-3 bg-slate-50/70 dark:bg-slate-950/60">
+                  <div className="md:col-span-5 lg:col-span-4 border border-slate-200 dark:border-slate-800 rounded-xl p-4 space-y-3 bg-slate-50/70 dark:bg-slate-950/60">
                     <div>
                       <p className="text-xs text-slate-500 dark:text-slate-400">Dia selecionado</p>
                       <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100">

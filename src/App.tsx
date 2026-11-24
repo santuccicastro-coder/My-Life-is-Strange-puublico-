@@ -3,26 +3,45 @@ import { AppShell } from './components/AppShell';
 import { AuthGate } from './components/AuthGate';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { QuickTransactionModal } from './components/QuickTransactionModal';
+import { WelcomeTour } from './components/WelcomeTour';
 import { AuthHouseholdProvider, useFinance } from './context/AuthHouseholdContext';
 import { ThemeProvider } from './context/ThemeContext';
-import { AssistantPage } from './pages/AssistantPage';
-import { CardsPage } from './pages/CardsPage';
+import { CardsAccountsHubPage } from './pages/CardsAccountsHubPage';
 import { GoalsPage } from './pages/GoalsPage';
 import { HomePage } from './pages/HomePage';
 import { HorizonPage, type HorizonHubTab } from './pages/HorizonPage';
-import { IncomesPage } from './pages/IncomesPage';
-import { RecurringPage } from './pages/RecurringPage';
-import { RemindersPage } from './pages/RemindersPage';
+import { ProfileHubPage } from './pages/ProfileHubPage';
 import { ReportsPage } from './pages/ReportsPage';
-import { SettingsPage } from './pages/SettingsPage';
 import { TransactionsPage } from './pages/TransactionsPage';
-import type { AppRoute, Transaction } from './types/finance';
+import type {
+  AppRoute,
+  CardsAccountsTab,
+  ProfileHubTab,
+  ReportsHubTab,
+  Transaction,
+} from './types/finance';
 
 function getHorizonInitialTab(route: AppRoute): HorizonHubTab {
   if (route === 'parcelamentos') return 'parcelamentos';
   if (route === 'compras') return 'compras';
   if (route === 'cenarios') return 'cenarios';
   return 'projecao';
+}
+
+function getTransitionGroupKey(route: AppRoute): string {
+  if (route === 'horizonte' || route === 'parcelamentos' || route === 'compras' || route === 'cenarios') {
+    return 'horizonte';
+  }
+  if (route === 'cartoes' || route === 'fixos') {
+    return 'cartoes';
+  }
+  if (route === 'relatorios' || route === 'renda') {
+    return 'relatorios';
+  }
+  if (route === 'lembretes' || route === 'config') {
+    return 'perfil';
+  }
+  return route;
 }
 
 function scrollPageToTop() {
@@ -34,14 +53,19 @@ function scrollPageToTop() {
 function AuthenticatedApp() {
   const { dataLoading } = useFinance();
   const [route, setRoute] = useState<AppRoute>('inicio');
+  const [cardsTab, setCardsTab] = useState<CardsAccountsTab>('cartoes');
+  const [reportsTab, setReportsTab] = useState<ReportsHubTab>('resumo');
+  const [profileTab, setProfileTab] = useState<ProfileHubTab>('lembretes');
+  const [profileAnchorId, setProfileAnchorId] = useState<string | null>(null);
   const [quickAddOpen, setQuickAddOpen] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
 
   useEffect(() => {
+    if (profileAnchorId) return;
     scrollPageToTop();
     const raf = window.requestAnimationFrame(scrollPageToTop);
     return () => window.cancelAnimationFrame(raf);
-  }, [route]);
+  }, [route, profileAnchorId]);
 
   const openNewTransaction = () => {
     setEditingTransaction(null);
@@ -54,42 +78,98 @@ function AuthenticatedApp() {
   };
 
   const handleNavigate = (nextRoute: AppRoute) => {
+    setProfileAnchorId(null);
+    if (nextRoute === 'fixos') {
+      setCardsTab('fixos');
+    } else if (nextRoute === 'cartoes') {
+      setCardsTab('cartoes');
+    } else if (nextRoute === 'renda') {
+      setReportsTab('renda');
+    } else if (nextRoute === 'relatorios') {
+      setReportsTab('resumo');
+    } else if (nextRoute === 'lembretes') {
+      setProfileTab('lembretes');
+    } else if (nextRoute === 'config') {
+      setProfileTab('configuracoes');
+    }
     setRoute(nextRoute);
     scrollPageToTop();
   };
 
+  const handleOpenProfileSection = (tab: ProfileHubTab, anchorId?: string) => {
+    setProfileTab(tab);
+    setProfileAnchorId(anchorId ?? null);
+    setRoute(tab === 'lembretes' ? 'lembretes' : 'config');
+    if (!anchorId) {
+      scrollPageToTop();
+    }
+  };
+
+  const handleNavigateToBankAccounts = () => {
+    handleOpenProfileSection('configuracoes', 'duofin-bank-accounts-section');
+  };
+
   const isHorizonHub =
     route === 'horizonte' || route === 'parcelamentos' || route === 'compras' || route === 'cenarios';
-  const pageTransitionKey = isHorizonHub ? 'horizonte' : route;
+  const isCardsHub = route === 'cartoes' || route === 'fixos';
+  const isReportsHub = route === 'relatorios' || route === 'renda';
+  const isProfileHub = route === 'lembretes' || route === 'config';
+  const pageTransitionKey = getTransitionGroupKey(route);
 
   return (
-    <AppShell route={route} onNavigate={handleNavigate} onQuickAdd={openNewTransaction}>
+    <AppShell
+      route={route}
+      onNavigate={handleNavigate}
+      onOpenProfileSection={handleOpenProfileSection}
+      onQuickAdd={openNewTransaction}
+    >
       {dataLoading ? (
         <div className="py-16 text-center text-sm text-slate-500">Carregando dados sincronizados...</div>
       ) : (
-        <div key={pageTransitionKey} className="duofin-page-enter">
-          {route === 'inicio' && (
-            <HomePage
-              onNavigate={handleNavigate}
-              onQuickAdd={openNewTransaction}
-              onEditTransaction={openEditTransaction}
-            />
-          )}
-          {route === 'lancamentos' && (
-            <TransactionsPage onQuickAdd={openNewTransaction} onEditTransaction={openEditTransaction} />
-          )}
-          {route === 'lembretes' && <RemindersPage />}
-          {isHorizonHub && (
-            <HorizonPage onNavigate={handleNavigate} initialTab={getHorizonInitialTab(route)} />
-          )}
-          {route === 'ia' && <AssistantPage onNavigate={handleNavigate} />}
-          {route === 'fixos' && <RecurringPage onNavigate={handleNavigate} />}
-          {route === 'renda' && <IncomesPage />}
-          {route === 'cartoes' && <CardsPage />}
-          {route === 'economias' && <GoalsPage />}
-          {route === 'relatorios' && <ReportsPage />}
-          {route === 'config' && <SettingsPage />}
-        </div>
+        <>
+          <WelcomeTour
+            onNavigateToBankAccounts={handleNavigateToBankAccounts}
+            onNavigate={handleNavigate}
+            onQuickAdd={openNewTransaction}
+          />
+          <ErrorBoundary
+            variant="page"
+            resetKey={route}
+            onNavigateHome={() => handleNavigate('inicio')}
+          >
+            <div key={pageTransitionKey} className="duofin-page-enter">
+              {route === 'inicio' && (
+                <HomePage
+                  onNavigate={handleNavigate}
+                  onQuickAdd={openNewTransaction}
+                  onEditTransaction={openEditTransaction}
+                />
+              )}
+              {route === 'lancamentos' && (
+                <TransactionsPage onQuickAdd={openNewTransaction} onEditTransaction={openEditTransaction} />
+              )}
+              {isReportsHub && (
+                <ReportsPage initialTab={route === 'renda' ? 'renda' : reportsTab} />
+              )}
+              {isCardsHub && (
+                <CardsAccountsHubPage
+                  onNavigate={handleNavigate}
+                  initialTab={route === 'fixos' ? 'fixos' : cardsTab}
+                />
+              )}
+              {isHorizonHub && (
+                <HorizonPage onNavigate={handleNavigate} initialTab={getHorizonInitialTab(route)} />
+              )}
+              {route === 'economias' && <GoalsPage />}
+              {isProfileHub && (
+                <ProfileHubPage
+                  initialTab={route === 'lembretes' && !profileAnchorId ? profileTab : profileTab}
+                  focusAnchorId={profileAnchorId}
+                />
+              )}
+            </div>
+          </ErrorBoundary>
+        </>
       )}
 
       <QuickTransactionModal

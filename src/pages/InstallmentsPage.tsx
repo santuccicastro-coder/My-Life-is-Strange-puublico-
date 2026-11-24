@@ -26,6 +26,7 @@ import {
   getMonthKeysFromStart,
   getTodayISO,
 } from '../utils/financeCalculations';
+import { resolveHouseholdExpenseCategories } from '../utils/validation';
 
 export function InstallmentsPage({ embedded = false }: { embedded?: boolean }) {
   const {
@@ -111,7 +112,8 @@ export function InstallmentsPage({ embedded = false }: { embedded?: boolean }) {
     setCardId(firstCard?.id ?? '');
     setCardName(firstCard?.name ?? 'Cartão principal');
     setPerson(currentPartnerName);
-    setCategory(household?.categories.includes('Compras da casa') ? 'Compras da casa' : household?.categories[0] ?? 'Outros');
+    const expenseCats = resolveHouseholdExpenseCategories(household);
+    setCategory(expenseCats.includes('Compras') ? 'Compras' : expenseCats[0] ?? 'Outros');
     setTotalAmount('');
     setInstallmentsCount('10');
     setFirstChargeDate(getTodayISO());
@@ -698,7 +700,12 @@ export function InstallmentsPage({ embedded = false }: { embedded?: boolean }) {
                     onChange={(e) => setCategory(e.target.value)}
                     className="w-full px-3 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-950"
                   >
-                    {household.categories.map((c) => (
+                    {Array.from(
+                      new Set([
+                        ...resolveHouseholdExpenseCategories(household),
+                        ...(editing?.category ? [editing.category] : []),
+                      ])
+                    ).map((c) => (
                       <option key={c} value={c}>
                         {c}
                       </option>

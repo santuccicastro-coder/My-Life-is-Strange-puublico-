@@ -5,10 +5,41 @@ interface BeforeInstallPromptEvent extends Event {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
 }
 
+declare global {
+  interface Window {
+    __duofinDeferredInstallPrompt?: BeforeInstallPromptEvent | null;
+  }
+}
+
+let cachedDeferredPrompt: BeforeInstallPromptEvent | null =
+  typeof window !== 'undefined' ? window.__duofinDeferredInstallPrompt ?? null : null;
+const promptListeners = new Set<(ev: BeforeInstallPromptEvent | null) => void>();
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeinstallprompt', (e: Event) => {
+    e.preventDefault();
+    const ev = e as BeforeInstallPromptEvent;
+    cachedDeferredPrompt = ev;
+    window.__duofinDeferredInstallPrompt = ev;
+    promptListeners.forEach((cb) => cb(cachedDeferredPrompt));
+  });
+
+  window.addEventListener('appinstalled', () => {
+    cachedDeferredPrompt = null;
+    window.__duofinDeferredInstallPrompt = null;
+    promptListeners.forEach((cb) => cb(null));
+  });
+}
+
 export function usePWAInstall() {
-  const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+  const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(
+    () =>
+      cachedDeferredPrompt ??
+      (typeof window !== 'undefined' ? window.__duofinDeferredInstallPrompt ?? null : null)
+  );
   const [isInstalled, setIsInstalled] = useState(false);
   const [isIOS, setIsIOS] = useState(false);
+  const [isInIframe, setIsInIframe] = useState(false);
 
   useEffect(() => {
     const checkStandalone = () => {
@@ -18,6 +49,17 @@ export function usePWAInstall() {
     };
 
     checkStandalone();
+
+    if (!cachedDeferredPrompt && window.__duofinDeferredInstallPrompt) {
+      cachedDeferredPrompt = window.__duofinDeferredInstallPrompt;
+      setDeferredPrompt(cachedDeferredPrompt);
+    }
+
+    try {
+      setIsInIframe(window.self !== window.top);
+    } catch {
+      setIsInIframe(true);
+    }
 
     const mediaQuery = window.matchMedia('(display-mode: standalone)');
     const handleMediaChange = () => checkStandalone();
@@ -30,42 +72,71 @@ export function usePWAInstall() {
       !(window as { MSStream?: unknown }).MSStream;
     setIsIOS(ios);
 
-    const handleBeforeInstallPrompt = (e: Event) => {
-      e.preventDefault();
-      setDeferredPrompt(e as BeforeInstallPromptEvent);
+    const listener = (ev: BeforeInstallPromptEvent | null) => {
+      setDeferredPrompt(ev);
     };
+    promptListeners.add(listener);
 
     const handleAppInstalled = () => {
       setIsInstalled(true);
       setDeferredPrompt(null);
     };
 
-    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
     window.addEventListener('appinstalled', handleAppInstalled);
 
     return () => {
+      promptListeners.delete(listener);
       mediaQuery.removeEventListener?.('change', handleMediaChange);
-      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
       window.removeEventListener('appinstalled', handleAppInstalled);
     };
   }, []);
 
   const install = useCallback(async (): Promise<boolean> => {
-    if (!deferredPrompt) return false;
-    await deferredPrompt.prompt();
-    const { outcome } = await deferredPrompt.userChoice;
-    if (outcome === 'accepted') {
+    const promptEvent =
+      deferredPrompt ?? cachedDeferredPrompt ?? window.__duofinDeferredInstallPrompt ?? null;
+    if (!promptEvent) return false;
+    try {
+      await promptEvent.prompt();
+      const { outcome } = await promptEvent.userChoice;
+      cachedDeferredPrompt = null;
+      window.__duofinDeferredInstallPrompt = null;
       setDeferredPrompt(null);
-      return true;
+      return outcome === 'accepted';
+    } catch {
+      cachedDeferredPrompt = null;
+      window.__duofinDeferredInstallPrompt = null;
+      setDeferredPrompt(null);
+      return false;
     }
-    return false;
   }, [deferredPrompt]);
+
+  const refreshPWA = useCallback(async () => {
+    try {
+      if ('serviceWorker' in navigator) {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map((r) => r.update()));
+      }
+      if ('caches' in window) {
+        const keys = await caches.keys();
+        await Promise.all(
+          keys
+            .filter((k) => k.includes('workbox') || k.includes('duofin') || k.includes('precache'))
+            .map((k) => caches.delete(k))
+        );
+      }
+    } catch {
+      // Ignore SW/Cache errors and force reload below
+    }
+    window.location.reload();
+  }, []);
 
   return {
     isInstallable: Boolean(deferredPrompt),
     isInstalled,
     isIOS,
+    isInIframe,
     install,
+    refreshPWA,
   };
 }
 
